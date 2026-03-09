@@ -293,7 +293,8 @@ function updateChartFor(symbol){
   const min = lows.length ? Math.min(...lows) : null;
   const max = highs.length ? Math.max(...highs) : null;
   const cur = rec.current ?? (closes.length ? closes[closes.length - 1] : null);
-
+  const minPadding = min * 0.97;
+  const maxPadding = max * 1.03;
   const minLine = min != null ? Array(labels.length).fill(min) : [];
   const maxLine = max != null ? Array(labels.length).fill(max) : [];
   const curLine = cur != null ? Array(labels.length).fill(cur) : [];
@@ -319,11 +320,6 @@ function updateChartFor(symbol){
     },
     scales: {
       x: { ticks: { color: '#9ca3af', maxRotation: 0, autoSkip: true }, grid: { color: 'rgba(255,255,255,0.06)' } },
-      
-
-const minPadding = min * 0.97;
-const maxPadding = max * 1.03;
-
 y: {
   ticks: { color: '#9ca3af', callback: v => fmtNum(v) },
   grid: { color: 'rgba(255,255,255,0.06)' },
