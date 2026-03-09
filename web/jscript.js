@@ -321,17 +321,19 @@ function updateChartFor(symbol){
     scales: {
       x: { ticks: { color: '#9ca3af', maxRotation: 0, autoSkip: true }, grid: { color: 'rgba(255,255,255,0.06)' } },
 
+
 y: {
   ticks: {
     color: '#9ca3af',
     callback: v => fmtNum(v)
   },
-  grid: {
-    color: 'rgba(255,255,255,0.06)'
-  },
-  suggestedMin: min != null ? min * 0.97 : undefined,
-  suggestedMax: max != null ? max * 1.03 : undefined
+  grid: { color: 'rgba(255,255,255,0.06)' },
+
+  // Padding libero: 10% sopra e sotto i valori del dataset principale
+  suggestedMin: Math.min(...closes) * 0.9,
+  suggestedMax: Math.max(...closes) * 1.1
 }
+
 
 
     }
