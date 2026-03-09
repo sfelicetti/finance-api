@@ -24,7 +24,7 @@ app.get("/api/history", async (req, res) => {
       .filter(Boolean);
 
     const period1 = req.query.from;
-    const period2 = req.query.to || undefined; // se mancante → oggi
+    const period2 = req.query.to || new Date().toISOString().slice(0, 10);
     const interval = "1d";
 
     if (!symbols.length) {
