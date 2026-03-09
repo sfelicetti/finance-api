@@ -278,37 +278,71 @@ function populateChartControls(data){
   updateChartFor(CHART_SYMBOL.value || available[0].symbol);
 }
 
-function updateChartFor(symbol){
+function updateChartFor(symbol) {
   const rec = (currentData || []).find(r => r.symbol === symbol);
-  if (!rec || !Array.isArray(rec.series) || !rec.series.length){
+  if (!rec || !Array.isArray(rec.series) || !rec.series.length) {
     drawEmptyChart();
     return;
   }
 
-  const labels = rec.series.map(s => new Date(s.date)).map(d => d.toLocaleDateString('it-IT'));
+  // Estraggo dati
+  const labels = rec.series.map(s => new Date(s.date).toLocaleDateString('it-IT'));
   const closes = rec.series.map(s => Number.isFinite(s.adjClose) ? s.adjClose : s.close).filter(Number.isFinite);
   const lows   = rec.series.map(s => s.low).filter(Number.isFinite);
   const highs  = rec.series.map(s => s.high).filter(Number.isFinite);
 
-  const min = lows.length ? Math.min(...lows) : null;
+  const min = lows.length  ? Math.min(...lows)  : null;
   const max = highs.length ? Math.max(...highs) : null;
   const cur = rec.current ?? (closes.length ? closes[closes.length - 1] : null);
-  const minPadding = min * 0.97;
-  const maxPadding = max * 1.03;
+
+  // --- Dataset linee min/max/prezzo attuale assegnati a y2 ---
   const minLine = min != null ? Array(labels.length).fill(min) : [];
   const maxLine = max != null ? Array(labels.length).fill(max) : [];
   const curLine = cur != null ? Array(labels.length).fill(cur) : [];
 
-  const data = {
-    labels,
-    datasets: [
-      { label: `Chiusura (adj) ${rec.symbol}`, data: closes, borderColor: '#60a5fa', backgroundColor: 'rgba(96,165,250,0.12)', fill: true, pointRadius: 0, borderWidth: 2, tension: 0.15 },
-      ...(min != null ? [{ label: 'Min (range)', data: minLine, borderColor: '#16a34a', borderDash: [6,4], pointRadius: 0, borderWidth: 1 }] : []),
-      ...(max != null ? [{ label: 'Max (range)', data: maxLine, borderColor: '#dc2626', borderDash: [6,4], pointRadius: 0, borderWidth: 1 }] : []),
-      ...(cur != null ? [{ label: 'Prezzo attuale', data: curLine, borderColor: '#f59e0b', borderDash: [4,4], pointRadius: 0, borderWidth: 1 }] : []),
-    ]
-  };
+  const datasets = [
+    // --- Linea principale dei prezzi (asse y) ---
+    {
+      label: `Chiusura (adj) ${rec.symbol}`,
+      data: closes,
+      borderColor: '#60a5fa',
+      backgroundColor: 'rgba(96,165,250,0.12)',
+      fill: true,
+      pointRadius: 0,
+      borderWidth: 2,
+      tension: 0.15,
+      yAxisID: 'y'        // <-- Asse principale
+    },
+    ...(min != null ? [{
+      label: 'Min (range)',
+      data: minLine,
+      borderColor: '#16a34a',
+      borderDash: [6,4],
+      pointRadius: 0,
+      borderWidth: 1,
+      yAxisID: 'y2'       // <-- Asse invisibile
+    }] : []),
+    ...(max != null ? [{
+      label: 'Max (range)',
+      data: maxLine,
+      borderColor: '#dc2626',
+      borderDash: [6,4],
+      pointRadius: 0,
+      borderWidth: 1,
+      yAxisID: 'y2'
+    }] : []),
+    ...(cur != null ? [{
+      label: 'Prezzo attuale',
+      data: curLine,
+      borderColor: '#f59e0b',
+      borderDash: [4,4],
+      pointRadius: 0,
+      borderWidth: 1,
+      yAxisID: 'y2'
+    }] : [])
+  ];
 
+  // --- Scale ---
   const options = {
     responsive: true,
     maintainAspectRatio: false,
@@ -316,31 +350,46 @@ function updateChartFor(symbol){
     plugins: {
       legend: { display: true, labels: { color: '#e5e7eb' } },
       tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmtNum(ctx.parsed.y)}` } },
-      title: { display: true, text: `${rec.shortName || rec.symbol} — ${rec.currency || ''}`.trim(), color: '#e5e7eb', padding: { top: 6, bottom: 6 }, font: { weight: '600' } }
+      title: {
+        display: true,
+        text: `${rec.shortName || rec.symbol} — ${rec.currency || ''}`.trim(),
+        color: '#e5e7eb',
+        padding: { top: 6, bottom: 6 },
+        font: { weight: '600' }
+      }
     },
     scales: {
-      x: { ticks: { color: '#9ca3af', maxRotation: 0, autoSkip: true }, grid: { color: 'rgba(255,255,255,0.06)' } },
+      x: {
+        ticks: { color: '#9ca3af', maxRotation: 0, autoSkip: true },
+        grid: { color: 'rgba(255,255,255,0.06)' }
+      },
 
+      // --- Asse principale: scala SOLO sui CLOSE ---
+      y: {
+        ticks: {
+          color: '#9ca3af',
+          callback: v => fmtNum(v)
+        },
+        grid: { color: 'rgba(255,255,255,0.06)' },
+        suggestedMin: Math.min(...closes) * 0.97,
+        suggestedMax: Math.max(...closes) * 1.03
+      },
 
-y: {
-  ticks: {
-    color: '#9ca3af',
-    callback: v => fmtNum(v)
-  },
-  grid: { color: 'rgba(255,255,255,0.06)' },
-
-  // Padding libero: 10% sopra e sotto i valori del dataset principale
-  suggestedMin: Math.min(...closes) * 0.9,
-  suggestedMax: Math.max(...closes) * 1.1
-}
-
-
-
+      // --- Asse invisibile per min/max/cur ---
+      y2: {
+        display: false
+      }
     }
   };
 
-  if (!priceChart){
-    priceChart = new Chart(CHART_CANVAS.getContext('2d'), { type: 'line', data, options });
+  // --- Rendering ---
+  const data = { labels, datasets };
+  if (!priceChart) {
+    priceChart = new Chart(CHART_CANVAS.getContext('2d'), {
+      type: 'line',
+      data,
+      options
+    });
   } else {
     priceChart.data = data;
     priceChart.options = options;
