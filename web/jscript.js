@@ -278,30 +278,63 @@ function populateChartControls(data){
   updateChartFor(CHART_SYMBOL.value || available[0].symbol);
 }
 
-function updateChartFor(symbol) {
+  function updateChartFor(symbol) {
   const rec = (currentData || []).find(r => r.symbol === symbol);
   if (!rec || !Array.isArray(rec.series) || !rec.series.length) {
     drawEmptyChart();
     return;
   }
 
-  // Estraggo dati
+  // --- Estrazione dati ---
   const labels = rec.series.map(s => new Date(s.date).toLocaleDateString('it-IT'));
-  const closes = rec.series.map(s => Number.isFinite(s.adjClose) ? s.adjClose : s.close).filter(Number.isFinite);
+  const closes = rec.series
+    .map(s => Number.isFinite(s.adjClose) ? s.adjClose : s.close)
+    .filter(Number.isFinite);
   const lows   = rec.series.map(s => s.low).filter(Number.isFinite);
   const highs  = rec.series.map(s => s.high).filter(Number.isFinite);
 
+  // --- Calcolo min, max, cur ---
   const min = lows.length  ? Math.min(...lows)  : null;
   const max = highs.length ? Math.max(...highs) : null;
   const cur = rec.current ?? (closes.length ? closes[closes.length - 1] : null);
 
-  // --- Dataset linee min/max/prezzo attuale assegnati a y2 ---
+  // --- Margini del 5% ---
+  const minClose = Math.min(...closes);
+  const maxClose = Math.max(...closes);
+  const yMin = minClose * 0.95;
+  const yMax = maxClose * 1.05;
+
+  // --- Linee orizzontali min/max/cur ---
   const minLine = min != null ? Array(labels.length).fill(min) : [];
   const maxLine = max != null ? Array(labels.length).fill(max) : [];
   const curLine = cur != null ? Array(labels.length).fill(cur) : [];
 
+  // --- Marker su min e max ---
+  const minMarker = (min != null) ? [{
+    label: 'Min',
+    data: labels.map((_, i) => (i === lows.indexOf(min) ? min : null)),
+    borderColor: '#16a34a',
+    backgroundColor: '#16a34a',
+    pointRadius: 5,
+    pointHoverRadius: 7,
+    showLine: false,
+    yAxisID: 'y'
+  }] : [];
+
+  const maxMarker = (max != null) ? [{
+    label: 'Max',
+    data: labels.map((_, i) => (i === highs.indexOf(max) ? max : null)),
+    borderColor: '#dc2626',
+    backgroundColor: '#dc2626',
+    pointRadius: 5,
+    pointHoverRadius: 7,
+    showLine: false,
+    yAxisID: 'y'
+  }] : [];
+
+  // --- Datasets ---
   const datasets = [
-    // --- Linea principale dei prezzi (asse y) ---
+    // Serie principale chiusure
     {
       label: `Chiusura (adj) ${rec.symbol}`,
       data: closes,
@@ -311,8 +344,10 @@ function updateChartFor(symbol) {
       pointRadius: 0,
       borderWidth: 2,
       tension: 0.15,
-      yAxisID: 'y'        // <-- Asse principale
+      yAxisID: 'y'
     },
+
+    // Linee orizzontali
     ...(min != null ? [{
       label: 'Min (range)',
       data: minLine,
@@ -320,8 +355,9 @@ function updateChartFor(symbol) {
       borderDash: [6,4],
       pointRadius: 0,
       borderWidth: 1,
-      yAxisID: 'y2'       // <-- Asse invisibile
+      yAxisID: 'y'
     }] : []),
+
     ...(max != null ? [{
       label: 'Max (range)',
       data: maxLine,
@@ -329,8 +365,9 @@ function updateChartFor(symbol) {
       borderDash: [6,4],
       pointRadius: 0,
       borderWidth: 1,
-      yAxisID: 'y2'
+      yAxisID: 'y'
     }] : []),
+
     ...(cur != null ? [{
       label: 'Prezzo attuale',
       data: curLine,
@@ -338,18 +375,26 @@ function updateChartFor(symbol) {
       borderDash: [4,4],
       pointRadius: 0,
       borderWidth: 1,
-      yAxisID: 'y2'
-    }] : [])
+      yAxisID: 'y'
+    }] : []),
+
+    // Marker min e max
+    ...minMarker,
+    ...maxMarker
   ];
 
-  // --- Scale ---
+  // --- Opzioni del grafico ---
   const options = {
     responsive: true,
     maintainAspectRatio: false,
     interaction: { mode: 'index', intersect: false },
     plugins: {
       legend: { display: true, labels: { color: '#e5e7eb' } },
-      tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmtNum(ctx.parsed.y)}` } },
+      tooltip: {
+        callbacks: {
+          label: (ctx) => `${ctx.dataset.label}: ${fmtNum(ctx.parsed.y)}`
+        }
+      },
       title: {
         display: true,
         text: `${rec.shortName || rec.symbol} — ${rec.currency || ''}`.trim(),
@@ -363,27 +408,21 @@ function updateChartFor(symbol) {
         ticks: { color: '#9ca3af', maxRotation: 0, autoSkip: true },
         grid: { color: 'rgba(255,255,255,0.06)' }
       },
-
-      // --- Asse principale: scala SOLO sui CLOSE ---
       y: {
         ticks: {
           color: '#9ca3af',
           callback: v => fmtNum(v)
         },
-        grid: { color: 'rgba(255,255,255,0.06)' },
-        suggestedMin: Math.min(...closes) * 0.97,
-        suggestedMax: Math.max(...closes) * 1.03
-      },
-
-      // --- Asse invisibile per min/max/cur ---
-      y2: {
-        display: false
+        min: yMin,
+        max: yMax,
+        grid: { color: 'rgba(255,255,255,0.06)' }
       }
     }
   };
 
   // --- Rendering ---
   const data = { labels, datasets };
+
   if (!priceChart) {
     priceChart = new Chart(CHART_CANVAS.getContext('2d'), {
       type: 'line',
