@@ -286,7 +286,7 @@ function updateChartFor(symbol) {
     return;
   }
 
-  // --- Estrazione serie ---
+  // --- Estrazione date e serie ---
   const dates  = rec.series.map(s => new Date(s.date));
   const labels = dates.map(d => d.toLocaleDateString('it-IT'));
 
@@ -314,17 +314,17 @@ function updateChartFor(symbol) {
   const yMax = realMax * 1.05;
 
   // Linee orizzontali
-  const line = v => Array(labels.length).fill(v);
-  const minLine = line(realMin);
-  const maxLine = line(realMax);
-  const curLine = line(cur);
+  const fillLine = v => Array(labels.length).fill(v);
+  const minLine  = fillLine(realMin);
+  const maxLine  = fillLine(realMax);
+  const curLine  = fillLine(cur);
 
   // Marker min/max
-  const sparse = (len, idx, value) =>
+  const sparsePoint = (len, idx, value) =>
     Array.from({length: len}, (_, i) => (i === idx ? value : null));
 
-  const minMarker = sparse(labels.length, minIndex, realMin);
-  const maxMarker = sparse(labels.length, maxIndex, realMax);
+  const minMarkerData = sparsePoint(labels.length, minIndex, realMin);
+  const maxMarkerData = sparsePoint(labels.length, maxIndex, realMax);
 
   // --- Datasets ---
   const datasets = [
@@ -367,10 +367,10 @@ function updateChartFor(symbol) {
       yAxisID: 'y'
     },
 
-    // --- Marker min/max ---
+    // Marker min/max
     {
       label: 'Min',
-      data: minMarker,
+      data: minMarkerData,
       borderColor: '#16a34a',
       backgroundColor: '#16a34a',
       pointRadius: 7,
@@ -380,7 +380,7 @@ function updateChartFor(symbol) {
     },
     {
       label: 'Max',
-      data: maxMarker,
+      data: maxMarkerData,
       borderColor: '#dc2626',
       backgroundColor: '#dc2626',
       pointRadius: 7,
@@ -390,7 +390,18 @@ function updateChartFor(symbol) {
     }
   ];
 
-  // --- OPZIONI (fix asse X invisibile + asse X migliorato) ---
+  // --- Asse X intelligente e ottimizzato ---
+  const xTicksRotation =
+    labels.length > 60 ? 75 :
+    labels.length > 40 ? 60 :
+    labels.length > 20 ? 40 : 25;
+
+  const step =
+    labels.length > 80 ? 12 :
+    labels.length > 60 ? 10 :
+    labels.length > 40 ? 8  :
+    labels.length > 20 ? 5  : 3;
+
   const options = {
     responsive: true,
     maintainAspectRatio: false,
@@ -399,35 +410,43 @@ function updateChartFor(symbol) {
 
     scales: {
       y: {
-        beginAtZero: false,   // <--- 🔥 EVITA CHE L’ASSE X VADA A Y=0
+        beginAtZero: false,
         min: yMin,
         max: yMax,
         ticks: {
-          color: '#9ca3af',
+          color: '#cbd5e1',
           callback: v => fmtNum(v)
         },
-        grid: { color: 'rgba(255,255,255,0.08)' }
+        grid: { color: 'rgba(255,255,255,0.08)', lineWidth: 1 }
       },
 
       x: {
-        offset: false,        // <--- 🔥 NON spostare l'asse fuori range
-        bounds: 'ticks',      // <--- 🔥 Forza asse X all'interno del grafico
-        grid: { color: 'rgba(255,255,255,0.06)' },
+        offset: false,
+        bounds: 'ticks',
+        grid: { color: 'rgba(255,255,255,0.06)', lineWidth: 1 },
+
         ticks: {
-          color: '#9ca3af',
-          maxRotation: 0,
-          autoSkip: false,
-          padding: 8,
+          color: '#d1d5db',
+          font: { size: 11, weight: '500', family: 'system-ui' },
+          padding: 10,
+
+          maxRotation: xTicksRotation,
+          minRotation: xTicksRotation,
+
           callback: (val, index) => {
-            if (index === 0) return labels[0];
-            if (index === labels.length - 1) return labels[index];
-            if (index % 5 === 0) {
+            // prima e ultima → sempre visibili
+            if (index === 0 || index === labels.length - 1)
+              return labels[index];
+
+            // salta in base alla densità
+            if (index % step === 0) {
               const d = dates[index];
               return d.toLocaleDateString('it-IT', {
                 day: '2-digit',
                 month: 'short'
               });
             }
+
             return '';
           }
         }
@@ -435,11 +454,15 @@ function updateChartFor(symbol) {
     },
 
     plugins: {
-      legend: { labels: { color: '#e5e7eb' } },
+      legend: {
+        labels: { color: '#e5e7eb', font: { size: 11 } }
+      },
       title: {
         display: true,
         text: rec.shortName || rec.symbol,
-        color: '#e5e7eb'
+        color: '#e5e7eb',
+        padding: { top: 4, bottom: 4 },
+        font: { size: 14, weight: '600' }
       }
     }
   };
@@ -447,7 +470,11 @@ function updateChartFor(symbol) {
   const data = { labels, datasets };
 
   if (!priceChart) {
-    priceChart = new Chart(CHART_CANVAS.getContext('2d'), { type: 'line', data, options });
+    priceChart = new Chart(CHART_CANVAS.getContext('2d'), {
+      type: 'line',
+      data,
+      options
+    });
   } else {
     priceChart.data = data;
     priceChart.options = options;
