@@ -432,23 +432,28 @@ function updateChartFor(symbol) {
 
           maxRotation: xTicksRotation,
           minRotation: xTicksRotation,
-
+/////////////////
           callback: (val, index) => {
-            // prima e ultima → sempre visibili
-            if (index === 0 || index === labels.length - 1)
-              return labels[index];
+  // Formato completo: "dd MMM yyyy"
+  const d = dates[index];
+  const formatted = d.toLocaleDateString('it-IT', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric'
+  });
 
-            // salta in base alla densità
-            if (index % step === 0) {
-              const d = dates[index];
-              return d.toLocaleDateString('it-IT', {
-                day: '2-digit',
-                month: 'short'
-              });
-            }
+  // Prima e ultima → sempre mostrate
+  if (index === 0 || index === labels.length - 1)
+    return formatted;
 
-            return '';
-          }
+  // Mostra una ogni N punti (step dinamico intelligente)
+  if (index % step === 0)
+    return formatted;
+
+  return '';
+}
+          ///////////////////////
+          
         }
       }
     },
