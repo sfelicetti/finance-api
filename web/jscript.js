@@ -308,8 +308,10 @@ function populateChartControls(data){
             : (closes.length ? closes[closes.length - 1] : null);
 
   // --- Trova indice primo min/max in serie (per i marker) ---
-  const idxMin = rec.series.findIndex(s => Number.isFinite(s.low)  && s.low  === min);
-  const idxMax = rec.series.findIndex(s => Number.isFinite(s.high) && s.high === max);
+    
+  const idxMin = rec.series.findIndex(s => Number.isFinite(s.low) && Math.abs(s.low - min) < 1e-6);
+  const idxMax = rec.series.findIndex(s => Number.isFinite(s.high) && Math.abs(s.high - max) < 1e-6);
+
   const minIndex = idxMin >= 0 ? idxMin : closes.indexOf(Math.min(...closes));
   const maxIndex = idxMax >= 0 ? idxMax : closes.indexOf(Math.max(...closes));
 
