@@ -77,7 +77,7 @@
     .error { color: #ffb4b4; }
 
     /* Chart panel */
-    #chartPanel { margin-top: 16px; height: 240px; overflow: hidden; }
+    #chartPanel { margin-top: 16px; height: 360px; overflow: visible; padding-bottom: 20px;}
     #chartPanel .controls { grid-template-columns: 1.2fr auto; }
   </style>
 </head>
@@ -170,11 +170,12 @@
         <div class="small">Mostra prezzi di chiusura (aggiustati) nell’intervallo selezionato. Linee tratteggiate: min/max del range e prezzo attuale.</div>
       </div>
     </div>
-    <canvas id="chartCanvas" height="100"></canvas>
+    <canvas id="chartCanvas"></canvas>
   </section>
+  
+<!-- Chart.js locale -->
+<script src="libs/chart.umd.min.js"></script>
 
-  <!-- Chart.js (CDN) -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="jscript.js?v=4"></script>
+  <script src="jscript.js?v=8"></script>
 </body>
 </html>

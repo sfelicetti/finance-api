@@ -286,8 +286,9 @@ function updateChartFor(symbol) {
     return;
   }
 
-  // --- Estrazione serie ---
-  const labels = rec.series.map(s => new Date(s.date).toLocaleDateString('it-IT'));
+  // --- Estrazione date e serie ---
+  const dates  = rec.series.map(s => new Date(s.date));
+  const labels = dates.map(d => d.toLocaleDateString('it-IT'));
 
   const closes = rec.series.map(s =>
     Number.isFinite(s.adjClose) ? s.adjClose : s.close
@@ -296,31 +297,34 @@ function updateChartFor(symbol) {
   const lows  = rec.series.map(s => s.low).filter(Number.isFinite);
   const highs = rec.series.map(s => s.high).filter(Number.isFinite);
 
-  // Se lows o highs mancano, fallback ai closes
-  const realMin = lows.length ? Math.min(...lows) : Math.min(...closes);
+  // Min/max reali
+  const realMin = lows.length  ? Math.min(...lows)  : Math.min(...closes);
   const realMax = highs.length ? Math.max(...highs) : Math.max(...closes);
+  const cur     = rec.current ?? closes[closes.length - 1];
 
-  const cur = rec.current ?? closes[closes.length-1];
-
-  // Trova indice reale min/max (tollerante)
-  const idxMin = rec.series.findIndex(s => Math.abs(s.low - realMin) < 1e-6);
+  // Indici min/max (tolleranti)
+  const idxMin = rec.series.findIndex(s => Math.abs(s.low  - realMin) < 1e-6);
   const idxMax = rec.series.findIndex(s => Math.abs(s.high - realMax) < 1e-6);
 
   const minIndex = (idxMin >= 0) ? idxMin : closes.indexOf(realMin);
   const maxIndex = (idxMax >= 0) ? idxMax : closes.indexOf(realMax);
 
-  // --- Margini basati sui min/max REALI ---
+  // --- Margini Y del 5% ---
   const yMin = realMin * 0.95;
   const yMax = realMax * 1.05;
 
   // Linee orizzontali
-  const minLine = Array(labels.length).fill(realMin);
-  const maxLine = Array(labels.length).fill(realMax);
-  const curLine = Array(labels.length).fill(cur);
+  const fillLine = v => Array(labels.length).fill(v);
+  const minLine  = fillLine(realMin);
+  const maxLine  = fillLine(realMax);
+  const curLine  = fillLine(cur);
 
-  // Marker (singolo punto)
-  const minMarkerData = labels.map((_, i) => (i === minIndex ? realMin : null));
-  const maxMarkerData = labels.map((_, i) => (i === maxIndex ? realMax : null));
+  // Marker min/max
+  const sparsePoint = (len, idx, value) =>
+    Array.from({length: len}, (_, i) => (i === idx ? value : null));
+
+  const minMarkerData = sparsePoint(labels.length, minIndex, realMin);
+  const maxMarkerData = sparsePoint(labels.length, maxIndex, realMax);
 
   // --- Datasets ---
   const datasets = [
@@ -363,14 +367,14 @@ function updateChartFor(symbol) {
       yAxisID: 'y'
     },
 
-    // --- Marker corretti ---
+    // Marker min/max
     {
       label: 'Min',
       data: minMarkerData,
       borderColor: '#16a34a',
       backgroundColor: '#16a34a',
-      pointRadius: 6,
-      pointHoverRadius: 8,
+      pointRadius: 7,
+      pointHoverRadius: 9,
       showLine: false,
       yAxisID: 'y'
     },
@@ -379,38 +383,91 @@ function updateChartFor(symbol) {
       data: maxMarkerData,
       borderColor: '#dc2626',
       backgroundColor: '#dc2626',
-      pointRadius: 6,
-      pointHoverRadius: 8,
+      pointRadius: 7,
+      pointHoverRadius: 9,
       showLine: false,
       yAxisID: 'y'
     }
   ];
 
-  // --- Opzioni ---
+  // --- Asse X intelligente e ottimizzato ---
+  const xTicksRotation =
+    labels.length > 60 ? 75 :
+    labels.length > 40 ? 60 :
+    labels.length > 20 ? 40 : 25;
+
+  const step =
+    labels.length > 80 ? 12 :
+    labels.length > 60 ? 10 :
+    labels.length > 40 ? 8  :
+    labels.length > 20 ? 5  : 3;
+
   const options = {
     responsive: true,
     maintainAspectRatio: false,
+
+    layout: { padding: { left: 20, right: 20, top: 10, bottom: 10 } },
+
     scales: {
       y: {
+        beginAtZero: false,
         min: yMin,
         max: yMax,
         ticks: {
-          color: '#9ca3af',
+          color: '#cbd5e1',
           callback: v => fmtNum(v)
         },
-        grid: { color: 'rgba(255,255,255,0.08)' }
+        grid: { color: 'rgba(255,255,255,0.08)', lineWidth: 1 }
       },
+
       x: {
-        ticks: { color: '#9ca3af' },
-        grid: { color: 'rgba(255,255,255,0.06)' }
+        offset: false,
+        bounds: 'ticks',
+        grid: { color: 'rgba(255,255,255,0.06)', lineWidth: 1 },
+
+        ticks: {
+          color: '#d1d5db',
+          font: { size: 11, weight: '500', family: 'system-ui' },
+          padding: 10,
+
+          maxRotation: xTicksRotation,
+          minRotation: xTicksRotation,
+/////////////////
+          callback: (val, index) => {
+  // Formato completo: "dd MMM yyyy"
+  const d = dates[index];
+  const formatted = d.toLocaleDateString('it-IT', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric'
+  });
+
+  // Prima e ultima → sempre mostrate
+  if (index === 0 || index === labels.length - 1)
+    return formatted;
+
+  // Mostra una ogni N punti (step dinamico intelligente)
+  if (index % step === 0)
+    return formatted;
+
+  return '';
+}
+          ///////////////////////
+          
+        }
       }
     },
+
     plugins: {
-      legend: { labels: { color: '#e5e7eb' } },
+      legend: {
+        labels: { color: '#e5e7eb', font: { size: 11 } }
+      },
       title: {
         display: true,
         text: rec.shortName || rec.symbol,
-        color: '#e5e7eb'
+        color: '#e5e7eb',
+        padding: { top: 4, bottom: 4 },
+        font: { size: 14, weight: '600' }
       }
     }
   };
@@ -418,7 +475,11 @@ function updateChartFor(symbol) {
   const data = { labels, datasets };
 
   if (!priceChart) {
-    priceChart = new Chart(CHART_CANVAS.getContext('2d'), { type: 'line', data, options });
+    priceChart = new Chart(CHART_CANVAS.getContext('2d'), {
+      type: 'line',
+      data,
+      options
+    });
   } else {
     priceChart.data = data;
     priceChart.options = options;
