@@ -285,56 +285,54 @@ function populateChartControls(data){
     return;
   }
 
-  // --- Estrazione dati ---
-  const labels = rec.series.map(s => new Date(s.date).toLocaleDateString('it-IT'));
+  // --- Estrazione dati grezzi ---
+  const dates  = rec.series.map(s => new Date(s.date));
+  const labels = dates.map(d => d.toLocaleDateString('it-IT'));
+
   const closes = rec.series
     .map(s => Number.isFinite(s.adjClose) ? s.adjClose : s.close)
     .filter(Number.isFinite);
-  const lows   = rec.series.map(s => s.low).filter(Number.isFinite);
-  const highs  = rec.series.map(s => s.high).filter(Number.isFinite);
 
-  // --- Calcolo min, max, cur ---
-  const min = lows.length  ? Math.min(...lows)  : null;
-  const max = highs.length ? Math.max(...highs) : null;
-  const cur = rec.current ?? (closes.length ? closes[closes.length - 1] : null);
+  const lows  = rec.series.map(s => s.low).filter(Number.isFinite);
+  const highs = rec.series.map(s => s.high).filter(Number.isFinite);
 
-  // --- Margini del 5% ---
+  if (!closes.length) {
+    drawEmptyChart();
+    return;
+  }
+
+  // --- Calcolo min, max, cur (con fallback) ---
+  const min = lows.length  ? Math.min(...lows)  : Math.min(...closes);
+  const max = highs.length ? Math.max(...highs) : Math.max(...closes);
+  const cur = (typeof rec.current === 'number') ? rec.current
+            : (closes.length ? closes[closes.length - 1] : null);
+
+  // --- Trova indice primo min/max in serie (per i marker) ---
+  const idxMin = rec.series.findIndex(s => Number.isFinite(s.low)  && s.low  === min);
+  const idxMax = rec.series.findIndex(s => Number.isFinite(s.high) && s.high === max);
+  const minIndex = idxMin >= 0 ? idxMin : closes.indexOf(Math.min(...closes));
+  const maxIndex = idxMax >= 0 ? idxMax : closes.indexOf(Math.max(...closes));
+
+  // --- Margini 5% su Y (limiti rigidi) ---
   const minClose = Math.min(...closes);
   const maxClose = Math.max(...closes);
-  const yMin = minClose * 0.95;
-  const yMax = maxClose * 1.05;
+  const yMin = (minClose * 0.95);
+  const yMax = (maxClose * 1.05);
 
-  // --- Linee orizzontali min/max/cur ---
-  const minLine = min != null ? Array(labels.length).fill(min) : [];
-  const maxLine = max != null ? Array(labels.length).fill(max) : [];
-  const curLine = cur != null ? Array(labels.length).fill(cur) : [];
+  // --- Linee orizzontali (opzionali) ---
+  const toLine = (val) => Array(labels.length).fill(val);
+  const minLine = (min != null) ? toLine(min) : [];
+  const maxLine = (max != null) ? toLine(max) : [];
+  const curLine = (cur != null) ? toLine(cur) : [];
 
-  // --- Marker su min e max ---
-  const minMarker = (min != null) ? [{
-    label: 'Min',
-    data: labels.map((_, i) => (i === lows.indexOf(min) ? min : null)),
-    borderColor: '#16a34a',
-    backgroundColor: '#16a34a',
-    pointRadius: 5,
-    pointHoverRadius: 7,
-    showLine: false,
-    yAxisID: 'y'
-  }] : [];
+  // --- Marker singoli su min e max ---
+  const sparsePoint = (len, index, value) => Array.from({length: len}, (_, i) => (i === index ? value : null));
+  const minMarkerData = (minIndex >= 0 && min != null) ? sparsePoint(labels.length, minIndex, min) : [];
+  const maxMarkerData = (maxIndex >= 0 && max != null) ? sparsePoint(labels.length, maxIndex, max) : [];
 
-  const maxMarker = (max != null) ? [{
-    label: 'Max',
-    data: labels.map((_, i) => (i === highs.indexOf(max) ? max : null)),
-    borderColor: '#dc2626',
-    backgroundColor: '#dc2626',
-    pointRadius: 5,
-    pointHoverRadius: 7,
-    showLine: false,
-    yAxisID: 'y'
-  }] : [];
-
-  // --- Datasets ---
+  // --- Datasets (serie principale + linee + marker) ---
   const datasets = [
-    // Serie principale chiusure
+    // Prezzi di chiusura (adj)
     {
       label: `Chiusura (adj) ${rec.symbol}`,
       data: closes,
@@ -347,43 +345,59 @@ function populateChartControls(data){
       yAxisID: 'y'
     },
 
-    // Linee orizzontali
+    // Linee orizzontali range/attuale
     ...(min != null ? [{
       label: 'Min (range)',
       data: minLine,
       borderColor: '#16a34a',
-      borderDash: [6,4],
+      borderDash: [6, 4],
       pointRadius: 0,
       borderWidth: 1,
       yAxisID: 'y'
     }] : []),
-
     ...(max != null ? [{
       label: 'Max (range)',
       data: maxLine,
       borderColor: '#dc2626',
-      borderDash: [6,4],
+      borderDash: [6, 4],
       pointRadius: 0,
       borderWidth: 1,
       yAxisID: 'y'
     }] : []),
-
     ...(cur != null ? [{
       label: 'Prezzo attuale',
       data: curLine,
       borderColor: '#f59e0b',
-      borderDash: [4,4],
+      borderDash: [4, 4],
       pointRadius: 0,
       borderWidth: 1,
       yAxisID: 'y'
     }] : []),
 
-    // Marker min e max
-    ...minMarker,
-    ...maxMarker
+    // Marker singoli su min/max
+    ...(minMarkerData.length ? [{
+      label: 'Min',
+      data: minMarkerData,
+      borderColor: '#16a34a',
+      backgroundColor: '#16a34a',
+      pointRadius: 5,
+      pointHoverRadius: 7,
+      showLine: false,
+      yAxisID: 'y'
+    }] : []),
+    ...(maxMarkerData.length ? [{
+      label: 'Max',
+      data: maxMarkerData,
+      borderColor: '#dc2626',
+      backgroundColor: '#dc2626',
+      pointRadius: 5,
+      pointHoverRadius: 7,
+      showLine: false,
+      yAxisID: 'y'
+    }] : []),
   ];
 
-  // --- Opzioni del grafico ---
+  // --- Opzioni grafico con limiti rigidi ---
   const options = {
     responsive: true,
     maintainAspectRatio: false,
@@ -406,36 +420,27 @@ function populateChartControls(data){
     scales: {
       x: {
         ticks: { color: '#9ca3af', maxRotation: 0, autoSkip: true },
-        grid: { color: 'rgba(255,255,255,0.06)' }
+        grid:  { color: 'rgba(255,255,255,0.06)' }
       },
       y: {
-        ticks: {
-          color: '#9ca3af',
-          callback: v => fmtNum(v)
-        },
+        ticks: { color: '#9ca3af', callback: v => fmtNum(v) },
+        grid:  { color: 'rgba(255,255,255,0.06)' },
         min: yMin,
-        max: yMax,
-        grid: { color: 'rgba(255,255,255,0.06)' }
+        max: yMax
       }
     }
   };
 
-  // --- Rendering ---
+  // --- Render / Update ---
   const data = { labels, datasets };
-
   if (!priceChart) {
-    priceChart = new Chart(CHART_CANVAS.getContext('2d'), {
-      type: 'line',
-      data,
-      options
-    });
+    priceChart = new Chart(CHART_CANVAS.getContext('2d'), { type: 'line', data, options });
   } else {
     priceChart.data = data;
     priceChart.options = options;
     priceChart.update();
   }
 }
-
 function drawEmptyChart(){
   const ctx = CHART_CANVAS.getContext('2d');
   if (!priceChart){
