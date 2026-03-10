@@ -21,7 +21,7 @@ const CHART_CANVAS = document.getElementById('chartCanvas');
 let priceChart = null;
 
 // Defaults
-API_BASE_INPUT.value = localStorage.getItem('apiBase') || 'https://finance-api-xwk1.onrender.com';
+API_BASE_INPUT.value = localStorage.getItem('apiBase') || 'https://finance-api-debug.onrender.com';
 SYMBOLS_INPUT.value  = localStorage.getItem('symbols') || 'AAPL, MSFT, NVDA, GOOGL';
 OSC_PCT_INPUT.value = localStorage.getItem('oscPct') || '30';
 
