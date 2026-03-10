@@ -286,8 +286,9 @@ function updateChartFor(symbol) {
     return;
   }
 
-  // --- Estrazione serie ---
-  const labels = rec.series.map(s => new Date(s.date).toLocaleDateString('it-IT'));
+  // --- Estrazione date e serie ---
+  const dates = rec.series.map(s => new Date(s.date));
+  const labels = dates.map(d => d.toLocaleDateString('it-IT'));
 
   const closes = rec.series.map(s =>
     Number.isFinite(s.adjClose) ? s.adjClose : s.close
@@ -296,34 +297,39 @@ function updateChartFor(symbol) {
   const lows  = rec.series.map(s => s.low).filter(Number.isFinite);
   const highs = rec.series.map(s => s.high).filter(Number.isFinite);
 
-  // Se lows o highs mancano, fallback ai closes
-  const realMin = lows.length ? Math.min(...lows) : Math.min(...closes);
+  // Min/max reali basati su Lows/Highs
+  const realMin = lows.length  ? Math.min(...lows)  : Math.min(...closes);
   const realMax = highs.length ? Math.max(...highs) : Math.max(...closes);
 
-  const cur = rec.current ?? closes[closes.length-1];
+  const cur = rec.current ?? closes[closes.length - 1];
 
-  // Trova indice reale min/max (tollerante)
-  const idxMin = rec.series.findIndex(s => Math.abs(s.low - realMin) < 1e-6);
+  // Indici min/max (tolleranti)
+  const idxMin = rec.series.findIndex(s => Math.abs(s.low  - realMin) < 1e-6);
   const idxMax = rec.series.findIndex(s => Math.abs(s.high - realMax) < 1e-6);
 
-  const minIndex = (idxMin >= 0) ? idxMin : closes.indexOf(realMin);
-  const maxIndex = (idxMax >= 0) ? idxMax : closes.indexOf(realMax);
+  const minIndex = idxMin >= 0 ? idxMin : closes.indexOf(realMin);
+  const maxIndex = idxMax >= 0 ? idxMax : closes.indexOf(realMax);
 
-  // --- Margini basati sui min/max REALI ---
+  // --- Margini Y del 5% ---
   const yMin = realMin * 0.95;
   const yMax = realMax * 1.05;
 
   // Linee orizzontali
-  const minLine = Array(labels.length).fill(realMin);
-  const maxLine = Array(labels.length).fill(realMax);
-  const curLine = Array(labels.length).fill(cur);
+  const fillLine = v => Array(labels.length).fill(v);
+  const minLine  = fillLine(realMin);
+  const maxLine  = fillLine(realMax);
+  const curLine  = fillLine(cur);
 
-  // Marker (singolo punto)
-  const minMarkerData = labels.map((_, i) => (i === minIndex ? realMin : null));
-  const maxMarkerData = labels.map((_, i) => (i === maxIndex ? realMax : null));
+  // Marker (unico punto)
+  const sparsePoint = (len, idx, value) =>
+    Array.from({length: len}, (_, i) => (i === idx ? value : null));
+
+  const minMarkerData = sparsePoint(labels.length, minIndex, realMin);
+  const maxMarkerData = sparsePoint(labels.length, maxIndex, realMax);
 
   // --- Datasets ---
   const datasets = [
+    // Chiusure
     {
       label: `Chiusura ${rec.symbol}`,
       data: closes,
@@ -331,10 +337,12 @@ function updateChartFor(symbol) {
       backgroundColor: 'rgba(96,165,250,0.12)',
       fill: true,
       pointRadius: 0,
-      tension: 0.15,
       borderWidth: 2,
+      tension: 0.15,
       yAxisID: 'y'
     },
+
+    // Linee range
     {
       label: 'Min (range)',
       data: minLine,
@@ -363,7 +371,7 @@ function updateChartFor(symbol) {
       yAxisID: 'y'
     },
 
-    // --- Marker corretti ---
+    // Marker min / max
     {
       label: 'Min',
       data: minMarkerData,
@@ -386,10 +394,13 @@ function updateChartFor(symbol) {
     }
   ];
 
-  // --- Opzioni ---
+  // --- Opzioni con asse X migliorato ---
   const options = {
     responsive: true,
     maintainAspectRatio: false,
+    layout: {
+      padding: { left: 18, right: 18 }
+    },
     scales: {
       y: {
         min: yMin,
@@ -401,8 +412,32 @@ function updateChartFor(symbol) {
         grid: { color: 'rgba(255,255,255,0.08)' }
       },
       x: {
-        ticks: { color: '#9ca3af' },
-        grid: { color: 'rgba(255,255,255,0.06)' }
+        offset: true,
+        grid: { color: 'rgba(255,255,255,0.06)' },
+        ticks: {
+          color: '#9ca3af',
+          maxRotation: 0,
+          autoSkip: false,
+          padding: 8,
+          callback: (val, index) => {
+            // Prima etichetta
+            if (index === 0) return labels[0];
+
+            // Ultima etichetta
+            if (index === labels.length - 1) return labels[index];
+
+            // Una ogni 5 punti
+            if (index % 5 === 0) {
+              const d = dates[index];
+              return d.toLocaleDateString('it-IT', {
+                day: '2-digit',
+                month: 'short'
+              });
+            }
+
+            return '';
+          }
+        }
       }
     },
     plugins: {
