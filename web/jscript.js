@@ -188,7 +188,7 @@ async function fetchHistory(){
 
   const params = new URLSearchParams({ symbols: symbols.join(','), from });
   if (to) params.append('to', to);
-  params.append('meta', meta); // <<< FAST | FULL
+  params.append('meta', meta); // FAST | FULL
 
   const url = `${base}/api/history?${params.toString()}`;
 
@@ -299,7 +299,6 @@ function renderTable(rows){
       <td>${r.currency || '—'}</td>
     `;
 
-    // Se il server ha fornito un errore per questo simbolo, segnalo nella riga
     if (r.error) {
       tr.classList.add('row-error');
       tr.title = `Errore: ${r.error}`;
@@ -329,28 +328,22 @@ function renderTable(rows){
  * - Altrimenti: Crescente / Calante / Stallo (tolleranza).
  */
 function computeTrendOscillation(series, pct) {
-  // Estrae i close aggiustati (o close) mantenendo allineamento con la serie
   const closes = series.map(r => {
     const v = Number.isFinite(r.adjClose) ? r.adjClose : r.close;
     return Number.isFinite(v) ? v : null;
   });
 
-  // Trova primo e ultimo valore valido (from / to)
   const iFrom = closes.findIndex(Number.isFinite);
   let iTo = -1;
   for (let i = closes.length - 1; i >= 0; i--) {
     if (Number.isFinite(closes[i])) { iTo = i; break; }
   }
 
-  if (iFrom < 0 || iTo < 0 || iFrom === iTo) {
-    // Dati insufficienti
-    return 'Oscillante';
-  }
+  if (iFrom < 0 || iTo < 0 || iFrom === iTo) return 'Oscillante';
 
   const valoreFrom = closes[iFrom];
   const valoreTo   = closes[iTo];
 
-  // Trova min/max (valore e indice) sui valori validi
   let valoreMin = Infinity, valoreMax = -Infinity;
   let iMin = -1, iMax = -1;
   for (let i = 0; i < closes.length; i++) {
@@ -359,14 +352,10 @@ function computeTrendOscillation(series, pct) {
     if (v < valoreMin) { valoreMin = v; iMin = i; }
     if (v > valoreMax) { valoreMax = v; iMax = i; }
   }
-  if (!Number.isFinite(valoreMin) || !Number.isFinite(valoreMax)) {
-    return 'Oscillante';
-  }
+  if (!Number.isFinite(valoreMin) || !Number.isFinite(valoreMax)) return 'Oscillante';
 
-  // Soglia in funzione del valore attuale (valoreTo)
   const soglia = Math.abs(valoreTo) * (Math.max(0, Number(pct) || 0) / 100);
 
-  // Ordine temporale e condizioni oscillazione
   const condA = (iFrom < iMin && iMin < iMax && iMax < iTo) &&
                 ((valoreFrom - valoreMin) > soglia) &&
                 ((valoreMax - valoreMin) > soglia) &&
@@ -379,7 +368,6 @@ function computeTrendOscillation(series, pct) {
 
   if (condA || condB) return 'Oscillante';
 
-  // Confronto finale (Crescente/Calante/Stallo) con piccola tolleranza
   const scale = Math.max(1, Math.abs(valoreMax), Math.abs(valoreFrom), Math.abs(valoreTo));
   const eps = scale * 1e-6;
 
@@ -425,11 +413,9 @@ function updateChartFor(symbol) {
   }
   DOWNLOAD_BTN.disabled = false;
 
-  // --- Estrazione date e serie ---
   const dates  = rec.series.map(s => new Date(s.date));
   const labels = dates.map(d => d.toLocaleDateString('it-IT'));
 
-  // Mantieni le lunghezze uguali alle labels: valori non validi -> null
   const closes = rec.series.map(s => {
     const v = Number.isFinite(s.adjClose) ? s.adjClose : s.close;
     return Number.isFinite(v) ? v : null;
@@ -438,7 +424,6 @@ function updateChartFor(symbol) {
   const lows  = rec.series.map(s => Number.isFinite(s.low)  ? s.low  : null);
   const highs = rec.series.map(s => Number.isFinite(s.high) ? s.high : null);
 
-  // Min/max reali (ignorando i null)
   const finiteLows   = lows.filter(Number.isFinite);
   const finiteHighs  = highs.filter(Number.isFinite);
   const finiteCloses = closes.filter(Number.isFinite);
@@ -447,31 +432,26 @@ function updateChartFor(symbol) {
   const realMax = finiteHighs.length ? Math.max(...finiteHighs) : Math.max(...finiteCloses);
   const cur     = Number.isFinite(rec.current) ? rec.current : (finiteCloses.at(-1) ?? null);
 
-  // Indici min/max (tolleranti)
   const idxMin = rec.series.findIndex(s => Number.isFinite(s.low)  && Math.abs(s.low  - realMin) < 1e-6);
   const idxMax = rec.series.findIndex(s => Number.isFinite(s.high) && Math.abs(s.high - realMax) < 1e-6);
 
   const minIndex = (idxMin >= 0) ? idxMin : closes.indexOf(realMin);
   const maxIndex = (idxMax >= 0) ? idxMax : closes.indexOf(realMax);
 
-  // --- Margini Y del 5% ---
   const yMin = realMin * 0.95;
   const yMax = realMax * 1.05;
 
-  // Linee orizzontali (stesse lunghezze delle labels)
   const fillLine = v => Array(labels.length).fill(v);
   const minLine  = fillLine(realMin);
   const maxLine  = fillLine(realMax);
   const curLine  = fillLine(cur);
 
-  // Marker min/max
   const sparsePoint = (len, idx, value) =>
     Array.from({length: len}, (_, i) => (i === idx ? value : null));
 
   const minMarkerData = sparsePoint(labels.length, minIndex, realMin);
   const maxMarkerData = sparsePoint(labels.length, maxIndex, realMax);
 
-  // --- Datasets ---
   const datasets = [
     {
       label: `Chiusura ${rec.symbol}`,
@@ -483,7 +463,7 @@ function updateChartFor(symbol) {
       tension: 0.15,
       borderWidth: 2,
       yAxisID: 'y',
-      spanGaps: true // consente di "saltare" i null
+      spanGaps: true
     },
     {
       label: 'Min (range)',
@@ -512,8 +492,6 @@ function updateChartFor(symbol) {
       borderWidth: 1,
       yAxisID: 'y'
     },
-
-    // Marker min/max
     {
       label: 'Min',
       data: minMarkerData,
@@ -536,7 +514,6 @@ function updateChartFor(symbol) {
     }
   ];
 
-  // --- Asse X intelligente e ottimizzato ---
   const xTicksRotation =
     labels.length > 60 ? 75 :
     labels.length > 40 ? 60 :
@@ -551,38 +528,28 @@ function updateChartFor(symbol) {
   const options = {
     responsive: true,
     maintainAspectRatio: false,
-
     layout: { padding: { left: 20, right: 20, top: 10, bottom: 10 } },
-
     scales: {
       y: {
         beginAtZero: false,
         min: yMin,
         max: yMax,
-        ticks: {
-          color: '#cbd5e1',
-          callback: v => fmtNum(v)
-        },
+        ticks: { color: '#cbd5e1', callback: v => fmtNum(v) },
         grid: { color: 'rgba(255,255,255,0.08)', lineWidth: 1 }
       },
-
       x: {
         offset: false,
         bounds: 'ticks',
         grid: { color: 'rgba(255,255,255,0.06)', lineWidth: 1 },
-
         ticks: {
           color: '#d1d5db',
           font: { size: 11, weight: '500', family: 'system-ui' },
           padding: 10,
-
           maxRotation: xTicksRotation,
           minRotation: xTicksRotation,
-
           callback: (val, index) => {
             const d = dates[index];
             const formatted = d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' });
-
             if (index === 0 || index === labels.length - 1) return formatted;
             if (index % step === 0) return formatted;
             return '';
@@ -590,11 +557,8 @@ function updateChartFor(symbol) {
         }
       }
     },
-
     plugins: {
-      legend: {
-        labels: { color: '#e5e7eb', font: { size: 11 } }
-      },
+      legend: { labels: { color: '#e5e7eb', font: { size: 11 } } },
       title: {
         display: true,
         text: (rec.name || rec.shortName || rec.symbol),
@@ -657,14 +621,12 @@ async function downloadCurrentChartData() {
   const from = FROM_INPUT.value || 'start';
   const to = TO_INPUT.value || 'today';
 
-  // Intestazione richiesta: "SIMBOLO - NOME - <VALUTA>"
   const headerLine = `${symbol} - ${name} - <${currency}>`;
-  // BOM UTF-8 per Excel + intestazioni
   const lines = ['\uFEFF' + headerLine, 'Data;Quotazione'];
 
   for (const s of rec.series) {
     const d = new Date(s.date);
-    const dateStr = d.toISOString().slice(0, 10); // YYYY-MM-DD
+    const dateStr = d.toISOString().slice(0, 10);
     const raw = Number.isFinite(s.adjClose) ? s.adjClose : s.close;
     const priceStr = Number.isFinite(raw)
       ? Number(raw).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -680,30 +642,22 @@ async function downloadCurrentChartData() {
   const safeTo = String(to || '').replace(/[\\/:*?"<>|]+/g, '-');
   const defaultFileName = `${safeSymbol}_${safeFrom}_${safeTo}.csv`;
 
-  // Se il browser supporta la File System Access API, consenti di scegliere cartella e nome file
   if (window.showSaveFilePicker) {
     try {
       const handle = await window.showSaveFilePicker({
         suggestedName: defaultFileName,
-        types: [
-          {
-            description: 'CSV (valori separati da punto e virgola)',
-            accept: { 'text/csv': ['.csv'] }
-          }
-        ]
+        types: [{ description: 'CSV (valori separati da punto e virgola)', accept: { 'text/csv': ['.csv'] } }]
       });
       const writable = await handle.createWritable();
       await writable.write(blob);
       await writable.close();
-      return; // tutto ok
+      return;
     } catch (err) {
-      // Se l'utente annulla il salvataggio, non facciamo nulla; in altri errori, fallback
       if (err && err.name === 'AbortError') return;
-      console.warn('showSaveFilePicker fallito, faccio fallback al download automatico.', err);
+      console.warn('showSaveFilePicker fallito, fallback al download.', err);
     }
   }
 
-  // Fallback: download automatico nella cartella predefinita del browser
   const a = document.createElement('a');
   const url = URL.createObjectURL(blob);
   a.href = url;
@@ -713,4 +667,3 @@ async function downloadCurrentChartData() {
   URL.revokeObjectURL(url);
   a.remove();
 }
-
