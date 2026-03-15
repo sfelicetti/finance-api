@@ -20,7 +20,7 @@ const CHART_SYMBOL = document.getElementById('chartSymbol');
 const CHART_CANVAS = document.getElementById('chartCanvas');
 let priceChart = null;
 
-// Defaults
+// Defaults (persistenza)
 API_BASE_INPUT.value = localStorage.getItem('apiBase') || 'https://finance-api-xwk1.onrender.com';
 SYMBOLS_INPUT.value  = localStorage.getItem('symbols') || 'AAPL, MSFT, NVDA, GOOGL';
 OSC_PCT_INPUT.value = localStorage.getItem('oscPct') || '30';
@@ -33,6 +33,25 @@ OSC_PCT_INPUT.value = localStorage.getItem('oscPct') || '30';
   FROM_INPUT.value = dFrom.toISOString().slice(0,10);
   TO_INPUT.value = dTo.toISOString().slice(0,10);
 })();
+
+// Ripristina stato checkbox da localStorage + sincronizza label bottone
+FETCH_FROM_FILE.checked = localStorage.getItem('fetchFromFile') === 'true';
+function syncFetchBtnLabel() {
+  FETCH_BTN.textContent = FETCH_FROM_FILE.checked ? 'Fetch (da file)' : 'Fetch';
+}
+syncFetchBtnLabel();
+FETCH_FROM_FILE.addEventListener('change', () => {
+  localStorage.setItem('fetchFromFile', String(FETCH_FROM_FILE.checked));
+  syncFetchBtnLabel();
+});
+
+// Enter nella textbox simboli => avvia fetch
+SYMBOLS_INPUT.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    FETCH_BTN.click();
+  }
+});
 
 let sortKey = 'symbol';
 let sortDir = 1; // 1 asc, -1 desc
@@ -55,8 +74,16 @@ function fmtPct(n) {
   return (n >= 0 ? '+' : '') + fmtNum(n, 2) + '%';
 }
 
-// Quando clicchi su Fetch: apri il file picker; se selezioni un file, carica simboli e poi procedi con la fetch
+function parseSymbols(text){
+  // Supporta separatori: virgola, punto e virgola, spazi, tab, newline
+  return String(text)
+    .split(/[\s,;]+/)
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(s => s.toUpperCase());
+}
 
+// Quando clicchi su Fetch: se attivo "da file", apre il file picker e poi esegue
 FETCH_BTN.addEventListener('click', async (e) => {
   e.preventDefault();
 
@@ -64,7 +91,7 @@ FETCH_BTN.addEventListener('click', async (e) => {
     try {
       const text = await pickSymbolsFromFile();
       if (typeof text === 'string') {
-        const parsed = parseSymbols(text);
+        const parsed = Array.from(new Set(parseSymbols(text)));
         if (parsed.length) {
           SYMBOLS_INPUT.value = parsed.join(', ');
           localStorage.setItem('symbols', SYMBOLS_INPUT.value);
@@ -78,7 +105,6 @@ FETCH_BTN.addEventListener('click', async (e) => {
   // In ogni caso esegui la fetch con il contenuto del campo
   fetchHistory();
 });
-
 
 function pickSymbolsFromFile(){
   return new Promise((resolve, reject) => {
@@ -100,22 +126,20 @@ function pickSymbolsFromFile(){
   });
 }
 
-function parseSymbols(text){
-  // Supporta separatori: virgola, punto e virgola, spazi, tab, newline
-  return String(text)
-    .split(/[\s,;]+/)
-    .map(s => s.trim())
-    .filter(Boolean)
-    .map(s => s.toUpperCase());
-}
-
 TBL.querySelectorAll('th.sortable').forEach(th => {
   th.addEventListener('click', () => {
     const key = th.dataset.key;
     if (sortKey === key) sortDir *= -1; else { sortKey = key; sortDir = 1; }
     renderTable(currentData);
-    TBL.querySelectorAll('th.sortable').forEach(el => el.classList.remove('active'));
+    // Aggiorna stato colonne e freccia asc/desc
+    TBL.querySelectorAll('th.sortable').forEach(el => {
+      el.classList.remove('active');
+      const span = el.querySelector('.arrow');
+      if (span) span.textContent = '↕';
+    });
     th.classList.add('active');
+    const arrow = th.querySelector('.arrow');
+    if (arrow) arrow.textContent = (sortDir === 1) ? '↑' : '↓';
   });
 });
 
@@ -128,12 +152,16 @@ async function fetchHistory(){
   setStatus('load', 'Richiesta in corso…');
 
   const base = API_BASE_INPUT.value.trim().replace(/\/+$/, '');
-  const symbols = SYMBOLS_INPUT.value.split(',').map(s => s.trim()).filter(Boolean);
+  const symbols = Array.from(new Set(parseSymbols(SYMBOLS_INPUT.value)));
   const from = FROM_INPUT.value; const to = TO_INPUT.value;
 
   if (!base) { setStatus('err', 'API base mancante'); return; }
   if (!symbols.length) { setStatus('err', 'Nessun simbolo'); return; }
   if (!from) { setStatus('err', 'Data From mancante'); return; }
+  if (to && new Date(from) > new Date(to)) {
+    setStatus('err', 'Intervallo date non valido (From > To)');
+    return;
+  }
 
   // Persisti preferenze
   localStorage.setItem('apiBase', base);
@@ -141,6 +169,7 @@ async function fetchHistory(){
   localStorage.setItem('from', from);
   if (to) localStorage.setItem('to', to);
   localStorage.setItem('oscPct', OSC_PCT_INPUT.value);
+  localStorage.setItem('fetchFromFile', String(FETCH_FROM_FILE.checked));
 
   const params = new URLSearchParams({ symbols: symbols.join(','), from });
   if (to) params.append('to', to);
@@ -214,8 +243,17 @@ function renderTable(rows){
       <td class="mono ${clsPct}">${fmtPct(r.potentialPct)}</td>
       <td>${r.currency || '—'}</td>
     `;
+
+    // Se il server ha fornito un errore per questo simbolo, segnalo nella riga
+    if (r.error) {
+      tr.classList.add('row-error');
+      tr.title = `Errore: ${r.error}`;
+    }
+
     tr.addEventListener('click', ()=>{
       if (r?.symbol) {
+        TBODY.querySelectorAll('tr.selected').forEach(x => x.classList.remove('selected'));
+        tr.classList.add('selected');
         CHART_SYMBOL.value = r.symbol;
         updateChartFor(r.symbol);
       }
@@ -290,21 +328,27 @@ function updateChartFor(symbol) {
   const dates  = rec.series.map(s => new Date(s.date));
   const labels = dates.map(d => d.toLocaleDateString('it-IT'));
 
-  const closes = rec.series.map(s =>
-    Number.isFinite(s.adjClose) ? s.adjClose : s.close
-  ).filter(Number.isFinite);
+  // Mantieni le lunghezze uguali alle labels: valori non validi -> null
+  const closes = rec.series.map(s => {
+    const v = Number.isFinite(s.adjClose) ? s.adjClose : s.close;
+    return Number.isFinite(v) ? v : null;
+  });
 
-  const lows  = rec.series.map(s => s.low).filter(Number.isFinite);
-  const highs = rec.series.map(s => s.high).filter(Number.isFinite);
+  const lows  = rec.series.map(s => Number.isFinite(s.low)  ? s.low  : null);
+  const highs = rec.series.map(s => Number.isFinite(s.high) ? s.high : null);
 
-  // Min/max reali
-  const realMin = lows.length  ? Math.min(...lows)  : Math.min(...closes);
-  const realMax = highs.length ? Math.max(...highs) : Math.max(...closes);
-  const cur     = rec.current ?? closes[closes.length - 1];
+  // Min/max reali (ignorando i null)
+  const finiteLows   = lows.filter(Number.isFinite);
+  const finiteHighs  = highs.filter(Number.isFinite);
+  const finiteCloses = closes.filter(Number.isFinite);
+
+  const realMin = finiteLows.length  ? Math.min(...finiteLows)  : Math.min(...finiteCloses);
+  const realMax = finiteHighs.length ? Math.max(...finiteHighs) : Math.max(...finiteCloses);
+  const cur     = Number.isFinite(rec.current) ? rec.current : (finiteCloses.at(-1) ?? null);
 
   // Indici min/max (tolleranti)
-  const idxMin = rec.series.findIndex(s => Math.abs(s.low  - realMin) < 1e-6);
-  const idxMax = rec.series.findIndex(s => Math.abs(s.high - realMax) < 1e-6);
+  const idxMin = rec.series.findIndex(s => Number.isFinite(s.low)  && Math.abs(s.low  - realMin) < 1e-6);
+  const idxMax = rec.series.findIndex(s => Number.isFinite(s.high) && Math.abs(s.high - realMax) < 1e-6);
 
   const minIndex = (idxMin >= 0) ? idxMin : closes.indexOf(realMin);
   const maxIndex = (idxMax >= 0) ? idxMax : closes.indexOf(realMax);
@@ -313,7 +357,7 @@ function updateChartFor(symbol) {
   const yMin = realMin * 0.95;
   const yMax = realMax * 1.05;
 
-  // Linee orizzontali
+  // Linee orizzontali (stesse lunghezze delle labels)
   const fillLine = v => Array(labels.length).fill(v);
   const minLine  = fillLine(realMin);
   const maxLine  = fillLine(realMax);
@@ -337,7 +381,8 @@ function updateChartFor(symbol) {
       pointRadius: 0,
       tension: 0.15,
       borderWidth: 2,
-      yAxisID: 'y'
+      yAxisID: 'y',
+      spanGaps: true // consente di "saltare" i null
     },
     {
       label: 'Min (range)',
@@ -432,28 +477,26 @@ function updateChartFor(symbol) {
 
           maxRotation: xTicksRotation,
           minRotation: xTicksRotation,
-/////////////////
+
           callback: (val, index) => {
-  // Formato completo: "dd MMM yyyy"
-  const d = dates[index];
-  const formatted = d.toLocaleDateString('it-IT', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric'
-  });
+            // Formato completo: "dd MMM yyyy"
+            const d = dates[index];
+            const formatted = d.toLocaleDateString('it-IT', {
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric'
+            });
 
-  // Prima e ultima → sempre mostrate
-  if (index === 0 || index === labels.length - 1)
-    return formatted;
+            // Prima e ultima → sempre mostrate
+            if (index === 0 || index === labels.length - 1)
+              return formatted;
 
-  // Mostra una ogni N punti (step dinamico intelligente)
-  if (index % step === 0)
-    return formatted;
+            // Mostra una ogni N punti (step dinamico intelligente)
+            if (index % step === 0)
+              return formatted;
 
-  return '';
-}
-          ///////////////////////
-          
+            return '';
+          }
         }
       }
     },
@@ -488,7 +531,6 @@ function updateChartFor(symbol) {
 }
 /////////////////////////////////
 
-
 function drawEmptyChart(){
   const ctx = CHART_CANVAS.getContext('2d');
   if (!priceChart){
@@ -500,3 +542,5 @@ function drawEmptyChart(){
     priceChart.update();
   }
 }
+
+
