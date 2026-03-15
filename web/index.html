@@ -34,7 +34,8 @@
       padding: 16px;
       box-shadow: 0 10px 30px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.04);
     }
-    .controls { display: grid; gap: 12px; grid-template-columns: 1.4fr 1.2fr .8fr .8fr .8fr auto; align-items: end; }
+    /* Aggiornata: aggiunta una colonna per il selettore FAST/FULL */
+    .controls { display: grid; gap: 12px; grid-template-columns: 1.4fr 1.2fr .8fr .8fr .8fr .8fr auto; align-items: end; }
     .field { display: flex; flex-direction: column; gap: 6px; }
     .field label { font-size: 12px; color: var(--muted); }
 
@@ -88,7 +89,7 @@
 <body>
   <header>
     <h1>Finance Quotes (LAN)</h1>
-    <div class="small">Storico prezzi per intervallo date con massimi/minimi e trend (crescente / calante / oscillante)*</div>
+    <div class="small">Storico prezzi per intervallo date con massimi/minimi e trend (crescente / calante / oscillante / stallo)*</div>
   </header>
 
   <section class="panel" aria-label="Controlli e tabella risultati">
@@ -115,6 +116,14 @@
       </div>
 
       <div class="field">
+        <label for="metaMode">Modalità metadati</label>
+        <select id="metaMode" aria-label="Selettore modalità metadati">
+          <option value="fast">FAST (consigliato)</option>
+          <option value="full">FULL (completo)</option>
+        </select>
+      </div>
+
+      <div class="field">
         <label for="fetchFromFile">Fetch da file?</label>
         <input id="fetchFromFile" type="checkbox" aria-label="Abilita caricamento simboli da file" />
       </div>
@@ -137,7 +146,7 @@
       Puoi cliccare <b>Fetch</b> per interrogare le API oppure abilitare
       <b>Fetch da file</b> per caricare un file <code>.txt</code>/<code>.csv</code>
       (simboli separati da virgole, spazi o a capo). I simboli verranno inseriti nel campo
-      "Simboli (virgola)" e poi verrà eseguita la richiesta.
+      "Simboli (virgola)" e poi verrà eseguita la richiesta. La modalità <b>FAST</b> è più rapida e stabile; la <b>FULL</b> arricchisce nome/valuta ma può essere più lenta.
     </div>
 
     <table id="tbl">
@@ -189,6 +198,7 @@
   
   <!-- Chart.js locale -->
   <script src="libs/chart.umd.min.js"></script>
-  <script src="jscript.js?v=2026.03.15"></script>
+  <script src="jscript.js?v=2026.03.15.1735"></script>
 </body>
 </html>
+
