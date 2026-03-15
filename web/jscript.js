@@ -18,6 +18,7 @@ const FETCH_FROM_FILE = document.getElementById('fetchFromFile');
 // --- Chart controls ---
 const CHART_SYMBOL = document.getElementById('chartSymbol');
 const CHART_CANVAS = document.getElementById('chartCanvas');
+const DOWNLOAD_BTN = document.getElementById('downloadBtn');
 let priceChart = null;
 
 // Defaults (persistenza)
@@ -147,6 +148,11 @@ CHART_SYMBOL.addEventListener('change', () => {
   if (CHART_SYMBOL.value) updateChartFor(CHART_SYMBOL.value);
 });
 
+// Download CSV del grafico corrente
+DOWNLOAD_BTN.addEventListener('click', () => {
+  downloadCurrentChartData();
+});
+
 async function fetchHistory(){
   ERROR_BOX.textContent = '';
   setStatus('load', 'Richiesta in corso…');
@@ -173,23 +179,47 @@ async function fetchHistory(){
 
   const params = new URLSearchParams({ symbols: symbols.join(','), from });
   if (to) params.append('to', to);
-  // Se in futuro aggiungi un <select id="interval">:
-  // const interval = (document.getElementById('interval')?.value || '1d');
-  // if (interval !== '1d') params.append('interval', interval);
-
   const url = `${base}/api/history?${params.toString()}`;
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-    const res = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeout);
 
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`HTTP ${res.status} ${res.statusText} – ${text}`);
+  // helper per una singola chiamata con timeout
+  const callOnce = async (timeoutMs) => {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`HTTP ${res.status} ${res.statusText} – ${text}`);
+      }
+      return await res.json();
+    } finally {
+      clearTimeout(t);
+    }
+  };
+
+  try {
+    // ping "anti-cold-start"
+    try {
+      const ping = await fetch(base + '/', { cache: 'no-store' });
+      if (!ping.ok) console.warn('Ping non OK', ping.status);
+    } catch(e) {
+      console.warn('Ping fallito (API non raggiungibile?)', e);
     }
 
-    const data = await res.json();
+    let data;
+    try {
+      // primo tentativo: 30s
+      data = await callOnce(30000);
+    } catch (err) {
+      // se è un AbortError (timeout), effettua UN SOLO retry breve (10s)
+      if (err?.name === 'AbortError') {
+        setStatus('load', 'Lento… ritento (1/1)');
+        data = await callOnce(10000);
+      } else {
+        throw err;
+      }
+    }
+
     if (!Array.isArray(data)) throw new Error('Formato inatteso della risposta');
 
     // Calcola trend lato client secondo il nuovo algoritmo
@@ -210,8 +240,17 @@ async function fetchHistory(){
     LAST_UPDATE.textContent = `Ultimo aggiornamento: ${new Date().toLocaleTimeString('it-IT')}`;
   } catch (err) {
     console.error(err);
-    setStatus('err', 'Errore rete/API');
-    ERROR_BOX.textContent = String(err.message || err);
+
+    if (err?.name === 'AbortError') {
+      setStatus('err', 'Timeout');
+      ERROR_BOX.textContent = 'Timeout: l’API non ha risposto in tempo. Verifica API Base o riprova tra poco.';
+    } else if (/Failed to fetch|NetworkError/i.test(String(err))) {
+      setStatus('err', 'Errore rete');
+      ERROR_BOX.textContent = 'Errore di rete/CORS. Se stai aprendo la pagina come file:// lancia un server locale (es. http://localhost:8080).';
+    } else {
+      setStatus('err', 'Errore rete/API');
+      ERROR_BOX.textContent = String(err.message || err);
+    }
   }
 }
 
@@ -345,6 +384,7 @@ function populateChartControls(data){
   if (!available.length){
     CHART_SYMBOL.disabled = true;
     CHART_SYMBOL.innerHTML = '<option value="">(nessun dato)</option>';
+    DOWNLOAD_BTN.disabled = true;
     drawEmptyChart();
     return;
   }
@@ -356,6 +396,7 @@ function populateChartControls(data){
     CHART_SYMBOL.appendChild(opt);
   }
   CHART_SYMBOL.disabled = false;
+  DOWNLOAD_BTN.disabled = false;
 
   const preferred = (SYMBOLS_INPUT.value.split(',')[0] || '').trim().toUpperCase();
   if (preferred && available.some(x => x.symbol === preferred)) CHART_SYMBOL.value = preferred;
@@ -368,8 +409,10 @@ function updateChartFor(symbol) {
   const rec = (currentData || []).find(r => r.symbol === symbol);
   if (!rec || !Array.isArray(rec.series) || !rec.series.length) {
     drawEmptyChart();
+    DOWNLOAD_BTN.disabled = true;
     return;
   }
+  DOWNLOAD_BTN.disabled = false;
 
   // --- Estrazione date e serie ---
   const dates  = rec.series.map(s => new Date(s.date));
@@ -554,7 +597,7 @@ function updateChartFor(symbol) {
       },
       title: {
         display: true,
-        text: rec.name || rec.shortName || rec.symbol,
+        text: (rec.name || rec.shortName || rec.symbol),
         color: '#e5e7eb',
         padding: { top: 4, bottom: 4 },
         font: { size: 14, weight: '600' }
@@ -588,4 +631,55 @@ function drawEmptyChart(){
     priceChart.options.plugins.title = { display: true, text: 'Nessun dato', color: '#e5e7eb' };
     priceChart.update();
   }
+  DOWNLOAD_BTN.disabled = true;
+}
+
+/** Scarica i dati (CSV) del simbolo selezionato nel grafico */
+function downloadCurrentChartData() {
+  const symbol = CHART_SYMBOL.value;
+  if (!symbol) {
+    ERROR_BOX.textContent = 'Nessun simbolo selezionato per il download.';
+    return;
+  }
+  const rec = (currentData || []).find(r => r.symbol === symbol);
+  if (!rec || !Array.isArray(rec.series) || !rec.series.length) {
+    ERROR_BOX.textContent = 'Nessun dato disponibile per il simbolo selezionato.';
+    return;
+  }
+
+  const name = rec.name || rec.shortName || rec.symbol || '';
+  const from = FROM_INPUT.value || 'start';
+  const to = TO_INPUT.value || 'today';
+
+  // Prima riga: "SIMBOLO - NOME"
+  const headerLine = `${symbol} - ${name}`;
+  // Seconda riga: intestazioni colonne
+  const lines = ['\uFEFF' + headerLine, 'Data;Quotazione']; // BOM per Excel UTF-8
+
+  for (const s of rec.series) {
+    const d = new Date(s.date);
+    const dateStr = d.toISOString().slice(0, 10); // YYYY-MM-DD
+    const raw = Number.isFinite(s.adjClose) ? s.adjClose : s.close;
+    const priceStr = Number.isFinite(raw)
+      ? Number(raw).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : '';
+    lines.push(`${dateStr};${priceStr}`);
+  }
+
+  const csv = lines.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+
+  const safeSymbol = String(symbol).replace(/[\\/:*?"<>|]+/g, '_');
+  const safeFrom = String(from || '').replace(/[\\/:*?"<>|]+/g, '-');
+  const safeTo = String(to || '').replace(/[\\/:*?"<>|]+/g, '-');
+  const filename = `${safeSymbol}_${safeFrom}_${safeTo}.csv`;
+
+  const a = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  URL.revokeObjectURL(url);
+  a.remove();
 }
