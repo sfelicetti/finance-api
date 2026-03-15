@@ -37,13 +37,11 @@
     .controls { display: grid; gap: 12px; grid-template-columns: 1.4fr 1.2fr .8fr .8fr .8fr auto; align-items: end; }
     .field { display: flex; flex-direction: column; gap: 6px; }
     .field label { font-size: 12px; color: var(--muted); }
-
     input[type="text"], input[type="date"], input[type="url"], input[type="number"], select {
       width: 100%;
       padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border);
       background: #0b1224; color: var(--text); outline: none;
     }
-
     button {
       padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px;
       background: #1e293b; color: var(--text); cursor: pointer; font-weight: 600;
@@ -175,7 +173,10 @@
       </div>
       <div class="field">
         <label>&nbsp;</label>
-        <div class="small">Mostra prezzi di chiusura (aggiustati) nell’intervallo selezionato. Linee tratteggiate: min/max del range e prezzo attuale.</div>
+        <div class="small">
+          Mostra prezzi di chiusura (aggiustati) nell’intervallo selezionato. Linee tratteggiate: min/max del range e prezzo attuale.<br/>
+          <i>Nota:</i> su browser compatibili (Chrome/Edge) il pulsante <b>Scarica dati (CSV)</b> consente di scegliere cartella e nome file; sugli altri browser il file verrà scaricato nella cartella predefinita.
+        </div>
       </div>
       <div class="field">
         <label>&nbsp;</label>
@@ -187,8 +188,6 @@
   
   <!-- Chart.js locale -->
   <script src="libs/chart.umd.min.js"></script>
-  <script src="jscript.js?v=2026.03.15.1621"></script>
+  <script src="jscript.js?v=2026.03.15.1635"></script>
 </body>
 </html>
-
-
