@@ -37,11 +37,13 @@
     .controls { display: grid; gap: 12px; grid-template-columns: 1.4fr 1.2fr .8fr .8fr .8fr auto; align-items: end; }
     .field { display: flex; flex-direction: column; gap: 6px; }
     .field label { font-size: 12px; color: var(--muted); }
+
     input[type="text"], input[type="date"], input[type="url"], input[type="number"], select {
       width: 100%;
       padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border);
       background: #0b1224; color: var(--text); outline: none;
     }
+
     button {
       padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px;
       background: #1e293b; color: var(--text); cursor: pointer; font-weight: 600;
@@ -76,10 +78,9 @@
 
     /* Chart panel */
     #chartPanel { margin-top: 16px; height: 360px; overflow: visible; padding-bottom: 20px;}
-    /* Portiamo a 3 colonne: selettore, descrizione, pulsante */
     #chartPanel .controls { display: grid; gap: 12px; grid-template-columns: 1.2fr auto auto; align-items: end; }
 
-    /* Aggiunte */
+    /* Extra */
     tbody tr.selected { background: #12203a; }
     .row-error { opacity: 0.9; border-left: 3px solid var(--red); }
   </style>
@@ -188,6 +189,6 @@
   
   <!-- Chart.js locale -->
   <script src="libs/chart.umd.min.js"></script>
-  <script src="jscript.js?v=2026.03.15.1629"></script>
+  <script src="jscript.js?v=2026.03.15.1637"></script>
 </body>
 </html>
