@@ -237,7 +237,7 @@ async function fetchHistory(){
     populateChartControls(currentData);
 
     setStatus('ok', `OK (${data.length} items)`);
-    LAST_UPDATE.textContent = `Ultimo aggiornamento: ${new Date().toLocaleTimeString('it-IT')}`;
+    LAST_UPDATE.textContent = `Ultimo aggiornamento: ${new Date().toLocaleTimeString('it-IT')}`);
   } catch (err) {
     console.error(err);
 
@@ -288,7 +288,6 @@ function renderTable(rows){
       <td>${r.currency || '—'}</td>
     `;
 
-    // Se il server ha fornito un errore per questo simbolo, segnalo nella riga
     if (r.error) {
       tr.classList.add('row-error');
       tr.title = `Errore: ${r.error}`;
@@ -307,40 +306,27 @@ function renderTable(rows){
 }
 
 /**
- * Nuovo algoritmo Trend richiesto:
+ * Nuovo algoritmo Trend:
  * - Usa adjClose (fallback: close).
- * - Calcola: valoreFrom, valoreTo, valoreMin, valoreMax e relative posizioni.
- * - Soglia = valoreMax * (pct/100).
- * - Oscillante se:
- *   A) iFrom < iMin < iMax < iTo e
- *      (from-min > S) e (max-min > S) e (max-to > S)
- *   B) iFrom < iMax < iMin < iTo e
- *      (max-from > S) e (max-min > S) e (to-min > S)
- * - Altrimenti: Crescente / Calante / Stallo (con piccola tolleranza).
+ * - Oscillante se (caso A) iFrom<iMin<iMax<iTo con tre differenze > soglia,
+ *   oppure (caso B) iFrom<iMax<iMin<iTo con tre differenze > soglia.
+ * - Altrimenti: Crescente/Calante/Stallo con tolleranza.
  */
 function computeTrendOscillation(series, pct) {
-  // Estrae i close aggiustati (o close) mantenendo allineamento con la serie
   const closes = series.map(r => {
     const v = Number.isFinite(r.adjClose) ? r.adjClose : r.close;
     return Number.isFinite(v) ? v : null;
   });
 
-  // Trova primo e ultimo valore valido (from / to)
   const iFrom = closes.findIndex(Number.isFinite);
   let iTo = -1;
-  for (let i = closes.length - 1; i >= 0; i--) {
-    if (Number.isFinite(closes[i])) { iTo = i; break; }
-  }
+  for (let i = closes.length - 1; i >= 0; i--) { if (Number.isFinite(closes[i])) { iTo = i; break; } }
 
-  if (iFrom < 0 || iTo < 0 || iFrom === iTo) {
-    // Dati insufficienti
-    return 'Oscillante';
-  }
+  if (iFrom < 0 || iTo < 0 || iFrom === iTo) return 'Oscillante';
 
   const valoreFrom = closes[iFrom];
   const valoreTo   = closes[iTo];
 
-  // Trova min/max (valore e indice) sui valori validi
   let valoreMin = Infinity, valoreMax = -Infinity;
   let iMin = -1, iMax = -1;
   for (let i = 0; i < closes.length; i++) {
@@ -349,13 +335,10 @@ function computeTrendOscillation(series, pct) {
     if (v < valoreMin) { valoreMin = v; iMin = i; }
     if (v > valoreMax) { valoreMax = v; iMax = i; }
   }
-  if (!Number.isFinite(valoreMin) || !Number.isFinite(valoreMax)) {
-    return 'Oscillante';
-  }
+  if (!Number.isFinite(valoreMin) || !Number.isFinite(valoreMax)) return 'Oscillante';
 
   const soglia = valoreMax * (Math.max(0, Number(pct) || 0) / 100);
 
-  // Ordine temporale e condizioni oscillazione
   const condA = (iFrom < iMin && iMin < iMax && iMax < iTo) &&
                 ((valoreFrom - valoreMin) > soglia) &&
                 ((valoreMax - valoreMin) > soglia) &&
@@ -368,7 +351,6 @@ function computeTrendOscillation(series, pct) {
 
   if (condA || condB) return 'Oscillante';
 
-  // Confronto finale (Crescente/Calante/Stallo) con piccola tolleranza
   const scale = Math.max(1, Math.abs(valoreMax), Math.abs(valoreFrom), Math.abs(valoreTo));
   const eps = scale * 1e-6;
 
@@ -569,22 +551,11 @@ function updateChartFor(symbol) {
           minRotation: xTicksRotation,
 
           callback: (val, index) => {
-            // Formato completo: "dd MMM yyyy"
             const d = dates[index];
-            const formatted = d.toLocaleDateString('it-IT', {
-              day: '2-digit',
-              month: 'short',
-              year: 'numeric'
-            });
+            const formatted = d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' });
 
-            // Prima e ultima → sempre mostrate
-            if (index === 0 || index === labels.length - 1)
-              return formatted;
-
-            // Mostra una ogni N punti (step dinamico intelligente)
-            if (index % step === 0)
-              return formatted;
-
+            if (index === 0 || index === labels.length - 1) return formatted;
+            if (index % step === 0) return formatted;
             return '';
           }
         }
@@ -608,11 +579,7 @@ function updateChartFor(symbol) {
   const data = { labels, datasets };
 
   if (!priceChart) {
-    priceChart = new Chart(CHART_CANVAS.getContext('2d'), {
-      type: 'line',
-      data,
-      options
-    });
+    priceChart = new Chart(CHART_CANVAS.getContext('2d'), { type: 'line', data, options });
   } else {
     priceChart.data = data;
     priceChart.options = options;
@@ -624,7 +591,16 @@ function updateChartFor(symbol) {
 function drawEmptyChart(){
   const ctx = CHART_CANVAS.getContext('2d');
   if (!priceChart){
-    priceChart = new Chart(ctx, { type: 'line', data: { labels: [], datasets: [] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, title: { display: true, text: 'Nessun dato', color: '#e5e7eb' } }, scales: { x: { display: false }, y: { display: false } } } });
+    priceChart = new Chart(ctx, {
+      type: 'line',
+      data: { labels: [], datasets: [] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false }, title: { display: true, text: 'Nessun dato', color: '#e5e7eb' } },
+        scales: { x: { display: false }, y: { display: false } }
+      }
+    });
   } else {
     priceChart.data = { labels: [], datasets: [] };
     priceChart.options.plugins = priceChart.options.plugins || {};
@@ -635,7 +611,7 @@ function drawEmptyChart(){
 }
 
 /** Scarica i dati (CSV) del simbolo selezionato nel grafico */
-function downloadCurrentChartData() {
+async function downloadCurrentChartData() {
   const symbol = CHART_SYMBOL.value;
   if (!symbol) {
     ERROR_BOX.textContent = 'Nessun simbolo selezionato per il download.';
@@ -648,13 +624,14 @@ function downloadCurrentChartData() {
   }
 
   const name = rec.name || rec.shortName || rec.symbol || '';
+  const currency = rec.currency || '';
   const from = FROM_INPUT.value || 'start';
   const to = TO_INPUT.value || 'today';
 
-  // Prima riga: "SIMBOLO - NOME"
-  const headerLine = `${symbol} - ${name}`;
-  // Seconda riga: intestazioni colonne
-  const lines = ['\uFEFF' + headerLine, 'Data;Quotazione']; // BOM per Excel UTF-8
+  // Intestazione richiesta: "SIMBOLO - NOME - <VALUTA>"
+  const headerLine = `${symbol} - ${name} - <${currency}>`;
+  // BOM UTF-8 per Excel + intestazioni
+  const lines = ['\uFEFF' + headerLine, 'Data;Quotazione'];
 
   for (const s of rec.series) {
     const d = new Date(s.date);
@@ -672,12 +649,36 @@ function downloadCurrentChartData() {
   const safeSymbol = String(symbol).replace(/[\\/:*?"<>|]+/g, '_');
   const safeFrom = String(from || '').replace(/[\\/:*?"<>|]+/g, '-');
   const safeTo = String(to || '').replace(/[\\/:*?"<>|]+/g, '-');
-  const filename = `${safeSymbol}_${safeFrom}_${safeTo}.csv`;
+  const defaultFileName = `${safeSymbol}_${safeFrom}_${safeTo}.csv`;
 
+  // Se il browser supporta la File System Access API, consenti di scegliere cartella e nome file
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: defaultFileName,
+        types: [
+          {
+            description: 'CSV (valori separati da punto e virgola)',
+            accept: { 'text/csv': ['.csv'] }
+          }
+        ]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return; // tutto ok
+    } catch (err) {
+      // Se l'utente annulla il salvataggio, non facciamo nulla; in altri errori, fallback
+      if (err && err.name === 'AbortError') return;
+      console.warn('showSaveFilePicker fallito, faccio fallback al download automatico.', err);
+    }
+  }
+
+  // Fallback: download automatico nella cartella predefinita del browser
   const a = document.createElement('a');
   const url = URL.createObjectURL(blob);
   a.href = url;
-  a.download = filename;
+  a.download = defaultFileName;
   document.body.appendChild(a);
   a.click();
   URL.revokeObjectURL(url);
