@@ -237,7 +237,8 @@ async function fetchHistory(){
     populateChartControls(currentData);
 
     setStatus('ok', `OK (${data.length} items)`);
-    LAST_UPDATE.textContent = `Ultimo aggiornamento: ${new Date().toLocaleTimeString('it-IT')}`);
+    // <<< FIX: rimossa la parentesi in eccesso qui >>>
+    LAST_UPDATE.textContent = `Ultimo aggiornamento: ${new Date().toLocaleTimeString('it-IT')}`;
   } catch (err) {
     console.error(err);
 
@@ -288,6 +289,7 @@ function renderTable(rows){
       <td>${r.currency || '—'}</td>
     `;
 
+    // Se il server ha fornito un errore per questo simbolo, segnalo nella riga
     if (r.error) {
       tr.classList.add('row-error');
       tr.title = `Errore: ${r.error}`;
@@ -684,3 +686,4 @@ async function downloadCurrentChartData() {
   URL.revokeObjectURL(url);
   a.remove();
 }
+
