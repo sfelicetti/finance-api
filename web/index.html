@@ -6,26 +6,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
-      --bg: #0f172a;         /* slate-900 */
-      --panel: #111827;      /* gray-900 */
-      --text: #e5e7eb;       /* gray-200 */
-      --muted: #9ca3af;      /* gray-400 */
-      --green: #16a34a;      /* green-600 */
-      --red: #dc2626;        /* red-600 */
-      --yellow: #f59e0b;     /* amber-500 */
-      --accent: #60a5fa;     /* blue-400 */
-      --border: #1f2937;     /* gray-800 */
+      --bg: #0f172a;
+      --panel: #111827;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --green: #16a34a;
+      --red: #dc2626;
+      --yellow: #f59e0b;
+      --accent: #60a5fa;
+      --border: #1f2937;
       --row-hover: #0b1224;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0; padding: 24px;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial;
       background: radial-gradient(1200px 800px at 15% 0%, #0b1224, #0f172a 45%, #0a0f1f 100%);
       color: var(--text);
     }
     header { margin-bottom: 16px; }
-    h1 { margin: 0 0 8px 0; font-size: 22px; font-weight: 700; letter-spacing: .2px; }
+    h1 { margin: 0 0 8px 0; font-size: 22px; font-weight: 700; }
     .small { color: var(--muted); font-size: 12px; }
     .panel {
       background: linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.00));
@@ -34,14 +34,30 @@
       padding: 16px;
       box-shadow: 0 10px 30px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.04);
     }
-    .controls { display: grid; gap: 12px; grid-template-columns: 1.4fr 1.2fr .8fr .8fr .8fr auto; align-items: end; }
-    .field { display: flex; flex-direction: column; gap: 6px; }
+
+    /* --- Layout controlli: due righe --- */
+    .controls { display: grid; gap: 12px; }
+    .controls-row {
+      display: grid; gap: 12px;
+      grid-template-columns: 2fr .9fr .9fr .8fr auto;
+      align-items: end;
+    }
+    /* Seconda riga */
+    .controls-row.row-2 {
+      grid-template-columns: 2fr 1fr .8fr auto;
+    }
+
+    .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
     .field label { font-size: 12px; color: var(--muted); }
 
     input[type="text"], input[type="date"], input[type="url"], input[type="number"], select {
       width: 100%;
-      padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border);
-      background: #0b1224; color: var(--text); outline: none;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #0b1224;
+      color: var(--text);
+      outline: none;
     }
 
     button {
@@ -51,144 +67,175 @@
     button:hover { background: #243042; }
 
     .status { display: flex; gap: 16px; align-items: center; margin-top: 10px; font-size: 12px; color: var(--muted); }
-    .badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--border); background: #0b1224; }
+    .badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--border); background:#0b1224;}
     .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
     .dot.ok { background: var(--green); }
     .dot.err { background: var(--red); }
-    .dot.load { background: var(--yellow); animation: pulse 1s infinite; }
-    @keyframes pulse { 0%{opacity: .5} 50%{opacity:1} 100%{opacity:.5} }
+    .dot.load { background: var(--yellow); animation: pulse 1s infinite;}
+
+    @keyframes pulse {0%{opacity:.5}50%{opacity:1}100%{opacity:.5}}
 
     table { width: 100%; border-collapse: collapse; margin-top: 14px; }
-    th, td { padding: 10px 10px; border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }
+    th, td { padding: 10px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
     th:first-child, td:first-child { text-align: left; }
-    thead th { position: sticky; top: 0; background: #0b1224; z-index: 1; font-weight: 700; }
+    td { text-align: right; }
+    thead th { position: sticky; top: 0; background: #0b1224; z-index: 1; }
     tbody tr:hover { background: var(--row-hover); }
-    .sym { font-weight: 700; letter-spacing: .3px; }
+
+    .sym { font-weight: 700; }
     .name { color: var(--muted); max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .pos { color: var(--green); font-variant-numeric: tabular-nums; }
-    .neg { color: var(--red); font-variant-numeric: tabular-nums; }
-    .mono { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+    .mono { font-variant-numeric: tabular-nums; }
+    .pos { color: var(--green); }
+    .neg { color: var(--red); }
     .center { text-align: center; }
-    .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
-    .footer { margin-top: 18px; font-size: 12px; color: var(--muted); }
-    .sortable { cursor: pointer; user-select: none; }
-    .sortable .arrow { opacity: .4; margin-left: 6px; }
-    .sortable.active .arrow { opacity: 1; }
     .error { color: #ffb4b4; }
+    tbody tr.selected { background: #12203a; }
+    .row-error { border-left: 3px solid var(--red); }
 
     /* Chart panel */
-    #chartPanel { margin-top: 16px; height: 360px; overflow: visible; padding-bottom: 20px;}
-    #chartPanel .controls { display: grid; gap: 12px; grid-template-columns: 1.2fr auto auto; align-items: end; }
+    #chartPanel { margin-top: 16px; height: 360px; padding-bottom: 20px;}
+    #chartPanel .controls {
+      display: grid; gap: 12px;
+      grid-template-columns: 2fr 1fr auto;
+      align-items: end;
+    }
+    #chartSymbol {
+      font-size: 14px;
+      padding: 12px 14px;
+      height: 44px;
+      min-width: 480px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #0b1224;
+      color: var(--text);
+    }
 
-    /* Extra */
-    tbody tr.selected { background: #12203a; }
-    .row-error { opacity: 0.9; border-left: 3px solid var(--red); }
+    @media(max-width:1220px){#chartSymbol{min-width:360px;}}
+    @media(max-width:920px){
+      .controls-row,.controls-row.row-2,#chartPanel .controls{grid-template-columns:1fr;}
+      #chartSymbol{min-width:100%;width:100%;}
+    }
   </style>
 </head>
 <body>
-  <header>
-    <h1>Finance Quotes (LAN)</h1>
-    <div class="small">Storico prezzi per intervallo date con massimi/minimi e trend (crescente / calante / oscillante)*</div>
-  </header>
 
-  <section class="panel" aria-label="Controlli e tabella risultati">
-    <div class="controls">
-      <div class="field">
-        <label for="apiBase">API Base</label>
-        <input id="apiBase" type="url" placeholder="https://finance-api-xwk1.onrender.com" aria-label="Indirizzo base dell'API" />
-      </div>
+<header>
+  <h1>Finance Quotes (LAN)</h1>
+  <div class="small">Storico prezzi in intervallo date con analisi min/max & trend.</div>
+</header>
+
+<section class="panel">
+  <div class="controls">
+
+    <!-- RIGA 1 -->
+    <div class="controls-row row-1">
       <div class="field">
         <label for="symbols">Simboli (virgola)</label>
-        <input id="symbols" type="text" placeholder="AAPL, MSFT, NVDA, GOOGL" aria-label="Simboli separati da virgola" />
+        <input id="symbols" type="text" placeholder="AAPL, MSFT, NVDA, GOOGL" />
       </div>
       <div class="field">
         <label for="from">From</label>
-        <input id="from" type="date" aria-label="Data iniziale" />
+        <input id="from" type="date" />
       </div>
       <div class="field">
         <label for="to">To</label>
-        <input id="to" type="date" aria-label="Data finale" />
+        <input id="to" type="date" />
       </div>
       <div class="field">
         <label for="oscPct">Soglia oscillazione (%)</label>
-        <input id="oscPct" type="number" min="0" max="90" step="1" placeholder="30" aria-label="Soglia oscillazione percentuale" />
+        <input id="oscPct" type="number" min="0" max="90" Placeholder="30" />
+      </div>
+      <div class="field" style="visibility:hidden"><label>&nbsp;</label><div></div></div>
+    </div>
+
+    <!-- RIGA 2 -->
+    <div class="controls-row row-2">
+
+      <div class="field">
+        <label for="apiBase">API Base</label>
+        <input id="apiBase" type="url" placeholder="https://finance-api-xwk1.onrender.com" />
       </div>
 
       <div class="field">
-        <label for="fetchFromFile">Fetch da file?</label>
-        <input id="fetchFromFile" type="checkbox" aria-label="Abilita caricamento simboli da file" />
-      </div>
-
-      <div class="field">
-        <label>&nbsp;</label>
-        <button id="fetchBtn" aria-label="Esegui fetch">Fetch</button>
-        <!-- input file nascosto -->
-        <input type="file" id="symbolsFile" accept=".txt,.csv,text/plain" style="display:none" aria-label="Seleziona file simboli" />
-      </div>
-    </div>
-
-    <div class="status" role="status" aria-live="polite">
-      <span id="statusBadge" class="badge"><span id="statusDot" class="dot"></span><span id="statusText">Pronto</span></span>
-      <span id="lastUpdate" class="small"></span>
-      <span id="errorBox" class="small error"></span>
-    </div>
-
-    <div class="hint">
-      Puoi cliccare <b>Fetch</b> per interrogare le API oppure abilitare
-      <b>Fetch da file</b> per caricare un file <code>.txt</code>/<code>.csv</code>
-      (simboli separati da virgole, spazi o a capo). I simboli verranno inseriti nel campo
-      "Simboli (virgola)" e poi verrà eseguita la richiesta.
-    </div>
-
-    <table id="tbl">
-      <thead>
-        <tr>
-          <th class="sortable" data-key="symbol">Symbol <span class="arrow">↕</span></th>
-          <th>Nome</th>
-          <th class="sortable" data-key="current">Attuale <span class="arrow">↕</span></th>
-          <th class="sortable" data-key="min">Min (range) <span class="arrow">↕</span></th>
-          <th class="sortable" data-key="max">Max (range) <span class="arrow">↕</span></th>
-          <th class="sortable" data-key="trend">Trend <span class="arrow">↕</span></th>
-          <th class="sortable" data-key="potentialPct">Upside % <span class="arrow">↕</span></th>
-          <th>Valuta</th>
-        </tr>
-      </thead>
-      <tbody id="tbody">
-        <tr><td class="center" colspan="8">Nessun dato (premi “Fetch”)</td></tr>
-      </tbody>
-    </table>
-
-    <div class="footer">
-      * Dati dal tuo server Node (LAN) via yahoo-finance2 (API non ufficiale).
-    </div>
-  </section>
-
-  <!-- CHART PANEL -->
-  <section class="panel" id="chartPanel" aria-label="Grafico prezzi">
-    <div class="controls">
-      <div class="field">
-        <label for="chartSymbol">Grafico simbolo</label>
-        <select id="chartSymbol" disabled>
-          <option value="">(nessun dato)</option>
+        <label for="metaMode">Modalità metadati</label>
+        <select id="metaMode">
+          <option value="fast">FAST (consigliato)</option>
+          <option value="full">FULL (completo)</option>
         </select>
       </div>
-      <div class="field">
-        <label>&nbsp;</label>
-        <div class="small">
-          Mostra prezzi di chiusura (aggiustati) nell’intervallo selezionato. Linee tratteggiate: min/max del range e prezzo attuale.<br/>
-          <i>Nota:</i> su browser compatibili (Chrome/Edge) il pulsante <b>Scarica dati (CSV)</b> consente di scegliere cartella e nome file; sugli altri browser il file verrà scaricato nella cartella predefinita.
-        </div>
+
+      <!-- FIX: checkbox + label nella stessa cella -->
+      <div class="field" style="display:flex; align-items:center; gap:10px; padding-top:18px;">
+        <input id="fetchFromFile" type="checkbox" />
+        <label for="fetchFromFile" class="small" style="cursor:pointer;">Fetch da file?</label>
       </div>
+
       <div class="field">
         <label>&nbsp;</label>
-        <button id="downloadBtn" aria-label="Scarica i dati del grafico in CSV">Scarica dati (CSV)</button>
+        <button id="fetchBtn">Fetch</button>
+        <input type="file" id="symbolsFile" accept=".txt,.csv,text/plain" style="display:none" />
+      </div>
+
+    </div>
+
+  </div>
+
+  <div class="status">
+    <span id="statusBadge" class="badge"><span id="statusDot" class="dot"></span><span id="statusText">Pronto</span></span>
+    <span id="lastUpdate" class="small"></span>
+    <span id="errorBox" class="small error"></span>
+  </div>
+
+  <div class="hint">La modalità FAST è più veloce, FULL estrae metadati completi.</div>
+
+  <table id="tbl">
+    <thead>
+      <tr>
+        <th class="sortable" data-key="symbol">Symbol <span class="arrow">↕</span></th>
+        <th>Nome</th>
+        <th class="sortable" data-key="current">Attuale <span class="arrow">↕</span></th>
+        <th class="sortable" data-key="min">Min <span class="arrow">↕</span></th>
+        <th class="sortable" data-key="max">Max <span class="arrow">↕</span></th>
+        <th class="sortable" data-key="trend">Trend <span class="arrow">↕</span></th>
+        <th class="sortable" data-key="potentialPct">Upside% <span class="arrow">↕</span></th>
+        <th>Valuta</th>
+      </tr>
+    </thead>
+    <tbody id="tbody">
+      <tr><td class="center" colspan="8">Nessun dato (premi “Fetch”)</td></tr>
+    </tbody>
+  </table>
+
+  <div class="footer">*</div>
+
+</section>
+
+<!-- CHART PANEL -->
+<section class="panel" id="chartPanel">
+  <div class="controls">
+    <div class="field">
+      <label for="chartSymbol">Grafico simbolo</label>
+      <select id="chartSymbol" disabled>
+        <option value="">(nessun dato)</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      <div class="small">
+        Prezzi di chiusura + min/max + prezzo attuale.
       </div>
     </div>
-    <canvas id="chartCanvas"></canvas>
-  </section>
-  
-  <!-- Chart.js locale -->
-  <script src="libs/chart.umd.min.js"></script>
-  <script src="jscript.js?v=2026.03.15"></script>
+    <div class="field">
+      <label>&nbsp;</label>
+      <button id="downloadBtn">Scarica dati (CSV)</button>
+    </div>
+  </div>
+  <canvas id="chartCanvas"></canvas>
+</section>
+
+<!-- SCRIPT -->
+libs/chart.umd.min.js</script>
+jscript.js?v=2026.03.15.1741</script>
+
 </body>
 </html>
