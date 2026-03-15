@@ -7,7 +7,7 @@ import YahooFinance from "yahoo-finance2";
 
 const app = express();
 
-// CORS: in produzione limita l'origine; per sviluppo va bene aperto
+// CORS: in produzione valuta di restringere l'origine; per sviluppo va bene aperto
 app.use(cors({ origin: true }));
 app.use(compression());
 
@@ -108,6 +108,7 @@ app.get("/api/history", async (req, res) => {
           if (!Array.isArray(series) || series.length === 0) {
             return {
               symbol,
+              name: null,
               shortName: null,
               currency: null,
               current: null,
@@ -143,7 +144,7 @@ app.get("/api/history", async (req, res) => {
           const potentialPct =
             Number.isFinite(current) && Number.isFinite(max) ? ((max / current - 1) * 100) : null;
 
-          // 5) Serie ridotta per il client
+          // 5) Riduzione serie per il client
           const cleanSeries = series.map(r => ({
             date: r.date,
             open: r.open,
@@ -154,9 +155,17 @@ app.get("/api/history", async (req, res) => {
             volume: r.volume,
           }));
 
+          // 6) Nome descrittivo robusto
+          const name =
+            q?.longName ||
+            q?.shortName ||
+            q?.displayName ||
+            symbol;
+
           return {
             symbol,
-            shortName: q?.shortName || symbol,
+            name,                         // <-- usato dal client per la colonna "Nome" e per UI
+            shortName: q?.shortName || null,
             currency: q?.currency || null,
             current,
             min,
@@ -168,6 +177,7 @@ app.get("/api/history", async (req, res) => {
           // Errore isolato per questo simbolo → non blocchiamo gli altri
           return {
             symbol,
+            name: null,
             shortName: null,
             currency: null,
             current: null,
