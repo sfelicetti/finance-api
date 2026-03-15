@@ -173,7 +173,7 @@ async function fetchHistory(){
 
   const params = new URLSearchParams({ symbols: symbols.join(','), from });
   if (to) params.append('to', to);
-  // Se in futuro aggiungi un <select id="interval">, potrai fare:
+  // Se in futuro aggiungi un <select id="interval">:
   // const interval = (document.getElementById('interval')?.value || '1d');
   // if (interval !== '1d') params.append('interval', interval);
 
@@ -236,6 +236,7 @@ function renderTable(rows){
   for (const r of sorted){
     const clsPct = (r.potentialPct ?? 0) >= 0 ? 'pos' : 'neg';
     const displayName = r.name || r.shortName || r.symbol || '—';
+
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td class="sym">${r.symbol || '—'}</td>
@@ -546,4 +547,3 @@ function drawEmptyChart(){
     priceChart.update();
   }
 }
-
