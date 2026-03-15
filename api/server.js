@@ -2,51 +2,170 @@
 // trigger render deploy
 import express from "express";
 import cors from "cors";
+import compression from "compression";
 import YahooFinance from "yahoo-finance2";
 
 const app = express();
+
+// CORS: in produzione limita l'origine; per sviluppo va bene aperto
 app.use(cors({ origin: true }));
+app.use(compression());
 
 const yahooFinance = new YahooFinance();
+
+// Helpers
+const isYYYYMMDD = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || "").trim());
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function withRetry(fn, { retries = 1, delayMs = 400 } = {}) {
+  try {
+    return await fn();
+  } catch (e) {
+    if (retries > 0) {
+      await sleep(delayMs);
+      return withRetry(fn, { retries: retries - 1, delayMs: Math.round(delayMs * 1.5) });
+    }
+    throw e;
+  }
+}
+
+// Promise pool (concurrency limit)
+async function mapPool(items, worker, concurrency = 6) {
+  const results = new Array(items.length);
+  let i = 0;
+  let active = 0;
+  return new Promise((resolve) => {
+    const next = () => {
+      if (i >= items.length && active === 0) return resolve(results);
+      while (active < concurrency && i < items.length) {
+        const cur = i++;
+        active++;
+        Promise.resolve()
+          .then(() => worker(items[cur], cur))
+          .then((res) => { results[cur] = res; })
+          .catch((err) => { results[cur] = { __error: String(err?.message || err) }; })
+          .finally(() => { active--; next(); });
+      }
+    };
+    next();
+  });
+}
 
 // PING
 app.get("/", (req, res) => {
   res.send("OK");
 });
 
-// === NUOVO ENDPOINT /api/history ===
-// Esempio: /api/history?symbols=AAPL,MSFT&from=2024-01-01&to=2024-02-01
+// === /api/history ===
+// /api/history?symbols=AAPL,MSFT&from=2024-01-01&to=2024-02-01&interval=1d
 app.get("/api/history", async (req, res) => {
   try {
-    const symbols = String(req.query.symbols || "")
-      .split(",")
+    // symbols parsing + dedup + normalizzazione
+    const rawSymbols = String(req.query.symbols || "")
+      .split(/[,\s;]+/)
       .map((s) => s.trim().toUpperCase())
       .filter(Boolean);
+    const symbols = Array.from(new Set(rawSymbols));
 
-    const period1 = req.query.from;
-    const period2 = req.query.to || new Date().toISOString().slice(0, 10);
-    const interval = "1d";
+    const period1 = String(req.query.from || "").trim();
+    const period2 = String(req.query.to || "").trim() || new Date().toISOString().slice(0, 10);
+    const interval = String(req.query.interval || "1d").trim();
 
+    const maxSymbols = 60;
     if (!symbols.length) {
       return res.status(400).json({ error: "symbols query param required" });
     }
-    if (!period1) {
+    if (symbols.length > maxSymbols) {
+      return res.status(400).json({ error: `too many symbols (max ${maxSymbols})` });
+    }
+    if (!period1 || !isYYYYMMDD(period1)) {
       return res.status(400).json({ error: "from param required (YYYY-MM-DD)" });
     }
+    if (!isYYYYMMDD(period2)) {
+      return res.status(400).json({ error: "to param invalid (YYYY-MM-DD)" });
+    }
+    if (new Date(period1) > new Date(period2)) {
+      return res.status(400).json({ error: "from must be <= to" });
+    }
 
-    const out = await Promise.all(
-      symbols.map(async (symbol) => {
-        // 1) Serie storica
-        const series = await yahooFinance.historical(symbol, {
-          period1,
-          period2,
-          interval,
-          events: "history",
-          includeAdjustedClose: true,
-        });
+    const out = await mapPool(
+      symbols,
+      async (symbol) => {
+        try {
+          // 1) Serie storica con retry "soft"
+          const series = await withRetry(
+            () =>
+              yahooFinance.historical(symbol, {
+                period1,
+                period2,
+                interval,
+                events: "history",
+                includeAdjustedClose: true,
+              }),
+            { retries: 1, delayMs: 500 }
+          );
 
-        // Nessun dato → ritorna oggetto vuoto
-        if (!series || !series.length) {
+          if (!Array.isArray(series) || series.length === 0) {
+            return {
+              symbol,
+              shortName: null,
+              currency: null,
+              current: null,
+              min: null,
+              max: null,
+              potentialPct: null,
+              series: [],
+              error: "no historical data",
+            };
+          }
+
+          // 2) Quote attuale (retry soft, fallback ultimo close)
+          let q = null;
+          try {
+            q = await withRetry(() => yahooFinance.quote(symbol), { retries: 1, delayMs: 400 });
+          } catch (_) {
+            // fallback su ultimo close
+          }
+
+          const lastClose = series[series.length - 1]?.close;
+          const current = Number.isFinite(q?.regularMarketPrice)
+            ? q.regularMarketPrice
+            : (Number.isFinite(lastClose) ? lastClose : null);
+
+          // 3) Min/max nel range
+          const lows  = series.map(r => r.low).filter((v) => Number.isFinite(v));
+          const highs = series.map(r => r.high).filter((v) => Number.isFinite(v));
+
+          const min = lows.length  ? Math.min(...lows)  : null;
+          const max = highs.length ? Math.max(...highs) : null;
+
+          // 4) Upside %
+          const potentialPct =
+            Number.isFinite(current) && Number.isFinite(max) ? ((max / current - 1) * 100) : null;
+
+          // 5) Serie ridotta per il client
+          const cleanSeries = series.map(r => ({
+            date: r.date,
+            open: r.open,
+            high: r.high,
+            low: r.low,
+            close: r.close,
+            adjClose: r.adjClose,
+            volume: r.volume,
+          }));
+
+          return {
+            symbol,
+            shortName: q?.shortName || symbol,
+            currency: q?.currency || null,
+            current,
+            min,
+            max,
+            potentialPct,
+            series: cleanSeries,
+          };
+        } catch (err) {
+          // Errore isolato per questo simbolo → non blocchiamo gli altri
           return {
             symbol,
             shortName: null,
@@ -56,56 +175,20 @@ app.get("/api/history", async (req, res) => {
             max: null,
             potentialPct: null,
             series: [],
+            error: String(err?.message || err),
           };
         }
-
-        // 2) Quote attuale (fallback → ultimo close)
-        let q = null;
-        try { q = await yahooFinance.quote(symbol); } catch (_) {}
-
-        const current =
-          q?.regularMarketPrice ??
-          series[series.length - 1].close;
-
-        // 3) Calcolo min/max
-        const lows  = series.map(r => r.low).filter(v => Number.isFinite(v));
-        const highs = series.map(r => r.high).filter(v => Number.isFinite(v));
-
-        const min = lows.length  ? Math.min(...lows)  : null;
-        const max = highs.length ? Math.max(...highs) : null;
-
-        // 4) Upside %
-        const potentialPct =
-          current && max ? ((max / current - 1) * 100) : null;
-
-        // 5) Serie ridotta per il client
-        const cleanSeries = series.map(r => ({
-          date: r.date,
-          open: r.open,
-          high: r.high,
-          low: r.low,
-          close: r.close,
-          adjClose: r.adjClose,
-          volume: r.volume,
-        }));
-
-        return {
-          symbol,
-          shortName: q?.shortName || symbol,
-          currency: q?.currency || null,
-          current,
-          min,
-          max,
-          potentialPct,
-          series: cleanSeries,
-        };
-      })
+      },
+      6 // concurrency
     );
 
     res.json(out);
   } catch (err) {
     console.error(err);
-    res.status(502).json({ error: "History fetch error", details: String(err.message || err) });
+    res.status(502).json({
+      error: "History fetch error",
+      details: String(err?.message || err),
+    });
   }
 });
 
@@ -113,3 +196,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log("API server running on port", PORT);
 });
+
