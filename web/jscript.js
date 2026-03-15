@@ -306,29 +306,41 @@ function renderTable(rows){
     TBODY.appendChild(tr);
   }
 }
-
 /**
- * Nuovo algoritmo Trend:
+ * Nuovo algoritmo Trend con soglia calcolata come % del valore attuale (valoreTo).
  * - Usa adjClose (fallback: close).
- * - Oscillante se (caso A) iFrom<iMin<iMax<iTo con tre differenze > soglia,
- *   oppure (caso B) iFrom<iMax<iMin<iTo con tre differenze > soglia.
- * - Altrimenti: Crescente/Calante/Stallo con tolleranza.
+ * - Calcola: valoreFrom, valoreTo, valoreMin, valoreMax e relative posizioni.
+ * - Soglia = valoreTo * (pct/100)   <-- modificato qui
+ * - Oscillante se:
+ *   A) iFrom < iMin < iMax < iTo e
+ *      (from-min > S) e (max-min > S) e (max-to > S)
+ *   B) iFrom < iMax < iMin < iTo e
+ *      (max-from > S) e (max-min > S) e (to-min > S)
+ * - Altrimenti: Crescente / Calante / Stallo (con piccola tolleranza).
  */
 function computeTrendOscillation(series, pct) {
+  // Estrae i close aggiustati (o close) mantenendo allineamento con la serie
   const closes = series.map(r => {
     const v = Number.isFinite(r.adjClose) ? r.adjClose : r.close;
     return Number.isFinite(v) ? v : null;
   });
 
+  // Trova primo e ultimo valore valido (from / to)
   const iFrom = closes.findIndex(Number.isFinite);
   let iTo = -1;
-  for (let i = closes.length - 1; i >= 0; i--) { if (Number.isFinite(closes[i])) { iTo = i; break; } }
+  for (let i = closes.length - 1; i >= 0; i--) {
+    if (Number.isFinite(closes[i])) { iTo = i; break; }
+  }
 
-  if (iFrom < 0 || iTo < 0 || iFrom === iTo) return 'Oscillante';
+  if (iFrom < 0 || iTo < 0 || iFrom === iTo) {
+    // Dati insufficienti
+    return 'Oscillante';
+  }
 
   const valoreFrom = closes[iFrom];
   const valoreTo   = closes[iTo];
 
+  // Trova min/max (valore e indice) sui valori validi
   let valoreMin = Infinity, valoreMax = -Infinity;
   let iMin = -1, iMax = -1;
   for (let i = 0; i < closes.length; i++) {
@@ -337,10 +349,14 @@ function computeTrendOscillation(series, pct) {
     if (v < valoreMin) { valoreMin = v; iMin = i; }
     if (v > valoreMax) { valoreMax = v; iMax = i; }
   }
-  if (!Number.isFinite(valoreMin) || !Number.isFinite(valoreMax)) return 'Oscillante';
+  if (!Number.isFinite(valoreMin) || !Number.isFinite(valoreMax)) {
+    return 'Oscillante';
+  }
 
-  const soglia = valoreMax * (Math.max(0, Number(pct) || 0) / 100);
+  // ====== MODIFICA: soglia in funzione del valore attuale (valoreTo) ======
+  const soglia = Math.abs(valoreTo) * (Math.max(0, Number(pct) || 0) / 100);
 
+  // Ordine temporale e condizioni oscillazione
   const condA = (iFrom < iMin && iMin < iMax && iMax < iTo) &&
                 ((valoreFrom - valoreMin) > soglia) &&
                 ((valoreMax - valoreMin) > soglia) &&
@@ -353,6 +369,7 @@ function computeTrendOscillation(series, pct) {
 
   if (condA || condB) return 'Oscillante';
 
+  // Confronto finale (Crescente/Calante/Stallo) con piccola tolleranza
   const scale = Math.max(1, Math.abs(valoreMax), Math.abs(valoreFrom), Math.abs(valoreTo));
   const eps = scale * 1e-6;
 
