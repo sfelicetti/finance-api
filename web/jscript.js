@@ -4,6 +4,7 @@ const SYMBOLS_INPUT = document.getElementById('symbols');
 const FROM_INPUT = document.getElementById('from');
 const TO_INPUT = document.getElementById('to');
 const OSC_PCT_INPUT = document.getElementById('oscPct');
+const META_MODE_SELECT = document.getElementById('metaMode');
 const FETCH_BTN = document.getElementById('fetchBtn');
 const FILE_INPUT = document.getElementById('symbolsFile');
 
@@ -24,7 +25,8 @@ let priceChart = null;
 // Defaults (persistenza)
 API_BASE_INPUT.value = localStorage.getItem('apiBase') || 'https://finance-api-xwk1.onrender.com';
 SYMBOLS_INPUT.value  = localStorage.getItem('symbols') || 'AAPL, MSFT, NVDA, GOOGL';
-OSC_PCT_INPUT.value = localStorage.getItem('oscPct') || '30';
+OSC_PCT_INPUT.value  = localStorage.getItem('oscPct')   || '30';
+META_MODE_SELECT.value = localStorage.getItem('metaMode') || 'fast';
 
 // default range: ultimi 30 giorni
 (function initDates(){
@@ -34,6 +36,11 @@ OSC_PCT_INPUT.value = localStorage.getItem('oscPct') || '30';
   FROM_INPUT.value = dFrom.toISOString().slice(0,10);
   TO_INPUT.value = dTo.toISOString().slice(0,10);
 })();
+
+// Persist metaMode on change
+META_MODE_SELECT.addEventListener('change', () => {
+  localStorage.setItem('metaMode', META_MODE_SELECT.value);
+});
 
 // Ripristina stato checkbox da localStorage + sincronizza label bottone
 FETCH_FROM_FILE.checked = localStorage.getItem('fetchFromFile') === 'true';
@@ -160,6 +167,7 @@ async function fetchHistory(){
   const base = API_BASE_INPUT.value.trim().replace(/\/+$/, '');
   const symbols = Array.from(new Set(parseSymbols(SYMBOLS_INPUT.value)));
   const from = FROM_INPUT.value; const to = TO_INPUT.value;
+  const meta = META_MODE_SELECT.value || 'fast';
 
   if (!base) { setStatus('err', 'API base mancante'); return; }
   if (!symbols.length) { setStatus('err', 'Nessun simbolo'); return; }
@@ -176,9 +184,12 @@ async function fetchHistory(){
   if (to) localStorage.setItem('to', to);
   localStorage.setItem('oscPct', OSC_PCT_INPUT.value);
   localStorage.setItem('fetchFromFile', String(FETCH_FROM_FILE.checked));
+  localStorage.setItem('metaMode', meta);
 
   const params = new URLSearchParams({ symbols: symbols.join(','), from });
   if (to) params.append('to', to);
+  params.append('meta', meta); // <<< FAST | FULL
+
   const url = `${base}/api/history?${params.toString()}`;
 
   // helper per una singola chiamata con timeout
@@ -222,7 +233,7 @@ async function fetchHistory(){
 
     if (!Array.isArray(data)) throw new Error('Formato inatteso della risposta');
 
-    // Calcola trend lato client secondo il nuovo algoritmo
+    // Calcola trend lato client secondo il nuovo algoritmo (soglia % sul valore attuale)
     const oscPct = parseFloat(OSC_PCT_INPUT.value) || 30;
     for (const r of data) {
       if (Array.isArray(r.series) && r.series.length >= 2) {
@@ -237,7 +248,6 @@ async function fetchHistory(){
     populateChartControls(currentData);
 
     setStatus('ok', `OK (${data.length} items)`);
-    // <<< FIX: rimossa la parentesi in eccesso qui >>>
     LAST_UPDATE.textContent = `Ultimo aggiornamento: ${new Date().toLocaleTimeString('it-IT')}`;
   } catch (err) {
     console.error(err);
@@ -306,17 +316,17 @@ function renderTable(rows){
     TBODY.appendChild(tr);
   }
 }
+
 /**
- * Nuovo algoritmo Trend con soglia calcolata come % del valore attuale (valoreTo).
+ * Trend con soglia calcolata come % del valore attuale (valoreTo).
  * - Usa adjClose (fallback: close).
- * - Calcola: valoreFrom, valoreTo, valoreMin, valoreMax e relative posizioni.
- * - Soglia = valoreTo * (pct/100)   <-- modificato qui
+ * - Soglia = |valoreTo| * (pct/100).
  * - Oscillante se:
  *   A) iFrom < iMin < iMax < iTo e
  *      (from-min > S) e (max-min > S) e (max-to > S)
  *   B) iFrom < iMax < iMin < iTo e
  *      (max-from > S) e (max-min > S) e (to-min > S)
- * - Altrimenti: Crescente / Calante / Stallo (con piccola tolleranza).
+ * - Altrimenti: Crescente / Calante / Stallo (tolleranza).
  */
 function computeTrendOscillation(series, pct) {
   // Estrae i close aggiustati (o close) mantenendo allineamento con la serie
@@ -353,7 +363,7 @@ function computeTrendOscillation(series, pct) {
     return 'Oscillante';
   }
 
-  // ====== MODIFICA: soglia in funzione del valore attuale (valoreTo) ======
+  // Soglia in funzione del valore attuale (valoreTo)
   const soglia = Math.abs(valoreTo) * (Math.max(0, Number(pct) || 0) / 100);
 
   // Ordine temporale e condizioni oscillazione
