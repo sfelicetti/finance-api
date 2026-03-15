@@ -192,7 +192,7 @@ async function fetchHistory(){
     const data = await res.json();
     if (!Array.isArray(data)) throw new Error('Formato inatteso della risposta');
 
-    // Calcola trend lato client secondo la soglia e la regola concordata
+    // Calcola trend lato client secondo il nuovo algoritmo
     const oscPct = parseFloat(OSC_PCT_INPUT.value) || 30;
     for (const r of data) {
       if (Array.isArray(r.series) && r.series.length >= 2) {
@@ -267,33 +267,75 @@ function renderTable(rows){
   }
 }
 
-function computeTrendOscillation(series, pct, eps = 0.01) {
-  const closes = series
-    .map(r => (Number.isFinite(r.adjClose) ? r.adjClose : r.close))
-    .filter(Number.isFinite);
+/**
+ * Nuovo algoritmo Trend richiesto:
+ * - Usa adjClose (fallback: close).
+ * - Calcola: valoreFrom, valoreTo, valoreMin, valoreMax e relative posizioni.
+ * - Soglia = valoreMax * (pct/100).
+ * - Oscillante se:
+ *   A) iFrom < iMin < iMax < iTo e
+ *      (from-min > S) e (max-min > S) e (max-to > S)
+ *   B) iFrom < iMax < iMin < iTo e
+ *      (max-from > S) e (max-min > S) e (to-min > S)
+ * - Altrimenti: Crescente / Calante / Stallo (con piccola tolleranza).
+ */
+function computeTrendOscillation(series, pct) {
+  // Estrae i close aggiustati (o close) mantenendo allineamento con la serie
+  const closes = series.map(r => {
+    const v = Number.isFinite(r.adjClose) ? r.adjClose : r.close;
+    return Number.isFinite(v) ? v : null;
+  });
 
-  if (closes.length < 2) return 'Oscillante';
-
-  const threshold = Math.max(0, Number(pct) || 0) / 100;
-
-  let peak = closes[0];
-  let trough = closes[0];
-  for (let i = 1; i < closes.length; i++) {
-    const p = closes[i];
-
-    if (p > peak) peak = p;
-    const dd = (peak - p) / peak;
-    if (dd >= threshold) return 'Oscillante';
-
-    if (p < trough) trough = p;
-    const rise = (p - trough) / trough;
-    if (rise >= threshold) return 'Oscillante';
+  // Trova primo e ultimo valore valido (from / to)
+  const iFrom = closes.findIndex(Number.isFinite);
+  let iTo = -1;
+  for (let i = closes.length - 1; i >= 0; i--) {
+    if (Number.isFinite(closes[i])) { iTo = i; break; }
   }
 
-  const first = closes[0], last = closes[closes.length - 1];
-  if (last > first * (1 + eps)) return 'Crescente';
-  if (last < first * (1 - eps)) return 'Calante';
-  return 'Oscillante';
+  if (iFrom < 0 || iTo < 0 || iFrom === iTo) {
+    // Dati insufficienti
+    return 'Oscillante';
+  }
+
+  const valoreFrom = closes[iFrom];
+  const valoreTo   = closes[iTo];
+
+  // Trova min/max (valore e indice) sui valori validi
+  let valoreMin = Infinity, valoreMax = -Infinity;
+  let iMin = -1, iMax = -1;
+  for (let i = 0; i < closes.length; i++) {
+    const v = closes[i];
+    if (!Number.isFinite(v)) continue;
+    if (v < valoreMin) { valoreMin = v; iMin = i; }
+    if (v > valoreMax) { valoreMax = v; iMax = i; }
+  }
+  if (!Number.isFinite(valoreMin) || !Number.isFinite(valoreMax)) {
+    return 'Oscillante';
+  }
+
+  const soglia = valoreMax * (Math.max(0, Number(pct) || 0) / 100);
+
+  // Ordine temporale e condizioni oscillazione
+  const condA = (iFrom < iMin && iMin < iMax && iMax < iTo) &&
+                ((valoreFrom - valoreMin) > soglia) &&
+                ((valoreMax - valoreMin) > soglia) &&
+                ((valoreMax - valoreTo)   > soglia);
+
+  const condB = (iFrom < iMax && iMax < iMin && iMin < iTo) &&
+                ((valoreMax - valoreFrom) > soglia) &&
+                ((valoreMax - valoreMin)  > soglia) &&
+                ((valoreTo  - valoreMin)  > soglia);
+
+  if (condA || condB) return 'Oscillante';
+
+  // Confronto finale (Crescente/Calante/Stallo) con piccola tolleranza
+  const scale = Math.max(1, Math.abs(valoreMax), Math.abs(valoreFrom), Math.abs(valoreTo));
+  const eps = scale * 1e-6;
+
+  if (valoreTo > valoreFrom + eps) return 'Crescente';
+  if (valoreTo < valoreFrom - eps) return 'Calante';
+  return 'Stallo';
 }
 
 function populateChartControls(data){
