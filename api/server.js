@@ -86,7 +86,7 @@ async function resolvePrettyName(symbol, quoteObj) {
       () => yahooFinance.search(symbol),
       { retries: 1, delayMs: 400 }
     );
-    const q0 = Array.isArray(sr?.quotes) ? sr.quotes.find(q => (q?.symbol || q?.symbol === symbol)) || sr.quotes[0] : null;
+    const q0 = Array.isArray(sr?.quotes) ? sr.quotes.find(q => (q?.symbol === symbol)) || sr.quotes[0] : null;
     name = q0?.longname || q0?.shortname || null;
     if (name) return name;
   } catch (_) {
@@ -95,6 +95,71 @@ async function resolvePrettyName(symbol, quoteObj) {
 
   // Fallback finale → simbolo
   return symbol;
+}
+
+/**
+ * Ricava la "valuta" del titolo:
+ * 1) quote.currency
+ * 2) quote.financialCurrency
+ * 3) quoteSummary(price).currency
+ * 4) quoteSummary(summaryDetail).currency
+ * 5) Heuristics per suffisso simbolo / mercati (es. .MI/.PA/.DE → EUR; .L → GBP; .TO/.V → CAD; .T → JPY; .HK → HKD)
+ * 6) default: USD
+ */
+async function resolveCurrency(symbol, quoteObj) {
+  // 1) Da quote()
+  let cur = quoteObj?.currency || quoteObj?.financialCurrency || null;
+  if (cur) return cur;
+
+  // 2) Da quoteSummary(price)
+  try {
+    const qs = await withRetry(
+      () => yahooFinance.quoteSummary(symbol, { modules: ["price"] }),
+      { retries: 1, delayMs: 400 }
+    );
+    cur = qs?.price?.currency || null;
+    if (cur) return cur;
+  } catch (_) {
+    // noop
+  }
+
+  // 3) Da quoteSummary(summaryDetail)
+  try {
+    const qs2 = await withRetry(
+      () => yahooFinance.quoteSummary(symbol, { modules: ["summaryDetail"] }),
+      { retries: 1, delayMs: 500 }
+    );
+    cur = qs2?.summaryDetail?.currency || null;
+    if (cur) return cur;
+  } catch (_) {
+    // noop
+  }
+
+  // 4) Heuristiche per suffisso simbolo (mercato)
+  // NOTA: non esaustivo, ma copre i casi principali
+  const suffixMap = [
+    [/\.MI$/i, "EUR"], // Borsa Italiana
+    [/\.PA$/i, "EUR"], // Euronext Paris
+    [/\.DE$/i, "EUR"], // Xetra/Frankfurt
+    [/\.AS$/i, "EUR"], // Euronext Amsterdam
+    [/\.BR$/i, "EUR"], // Euronext Brussels
+    [/\.MC$/i, "EUR"], // BME Spain
+    [/\.L$/i,  "GBP"], // LSE (spesso GBp/GBX come subunità, qui standardizziamo a GBP)
+    [/\.TO$/i, "CAD"], // TSX
+    [/\.V$/i,  "CAD"], // TSX Venture
+    [/\.T$/i,  "JPY"], // Tokyo
+    [/\.HK$/i, "HKD"], // Hong Kong
+    [/\.AX$/i, "AUD"], // ASX
+    [/\.NZ$/i, "NZD"], // NZX
+    [/\.SS$/i, "CNY"], // Shanghai
+    [/\.SZ$/i, "CNY"], // Shenzhen
+  ];
+  for (const [re, c] of suffixMap) {
+    if (re.test(symbol)) return c;
+  }
+
+  // 5) Default
+  return "USD";
 }
 
 // PING
@@ -204,11 +269,14 @@ app.get("/api/history", async (req, res) => {
           // 6) Nome descrittivo robusto (quote → quoteSummary.price → search)
           const name = await resolvePrettyName(symbol, q);
 
+          // 7) Valuta robusta (quote → quoteSummary → heuristiche)
+          const currency = await resolveCurrency(symbol, q);
+
           return {
             symbol,
-            name,                         // <-- usato dal client per la colonna "Nome" e per UI
+            name,
             shortName: q?.shortName || null,
-            currency: q?.currency || null,
+            currency,
             current,
             min,
             max,
@@ -248,5 +316,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log("API server running on port", PORT);
 });
-
 
