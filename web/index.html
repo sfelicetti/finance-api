@@ -71,14 +71,18 @@
     .center { text-align: center; }
     .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
     .footer { margin-top: 18px; font-size: 12px; color: var(--muted); }
-    .sortable { cursor: pointer; }
+    .sortable { cursor: pointer; user-select: none; }
     .sortable .arrow { opacity: .4; margin-left: 6px; }
     .sortable.active .arrow { opacity: 1; }
     .error { color: #ffb4b4; }
 
     /* Chart panel */
     #chartPanel { margin-top: 16px; height: 360px; overflow: visible; padding-bottom: 20px;}
-    #chartPanel .controls { grid-template-columns: 1.2fr auto; }
+    #chartPanel .controls { display: grid; gap: 12px; grid-template-columns: 1.2fr auto auto; align-items: end; }
+
+    /* Extra */
+    tbody tr.selected { background: #12203a; }
+    .row-error { opacity: 0.9; border-left: 3px solid var(--red); }
   </style>
 </head>
 <body>
@@ -87,51 +91,54 @@
     <div class="small">Storico prezzi per intervallo date con massimi/minimi e trend (crescente / calante / oscillante)*</div>
   </header>
 
-  <section class="panel">
+  <section class="panel" aria-label="Controlli e tabella risultati">
     <div class="controls">
       <div class="field">
         <label for="apiBase">API Base</label>
-        <input id="apiBase" type="url" placeholder="https://finance-api-xwk1.onrender.com" />
+        <input id="apiBase" type="url" placeholder="https://finance-api-xwk1.onrender.com" aria-label="Indirizzo base dell'API" />
       </div>
       <div class="field">
         <label for="symbols">Simboli (virgola)</label>
-        <input id="symbols" type="text" placeholder="AAPL, MSFT, NVDA, GOOGL" />
+        <input id="symbols" type="text" placeholder="AAPL, MSFT, NVDA, GOOGL" aria-label="Simboli separati da virgola" />
       </div>
       <div class="field">
         <label for="from">From</label>
-        <input id="from" type="date" />
+        <input id="from" type="date" aria-label="Data iniziale" />
       </div>
       <div class="field">
         <label for="to">To</label>
-        <input id="to" type="date" />
+        <input id="to" type="date" aria-label="Data finale" />
       </div>
       <div class="field">
         <label for="oscPct">Soglia oscillazione (%)</label>
-        <input id="oscPct" type="number" min="0" max="90" step="1" placeholder="30" />
+        <input id="oscPct" type="number" min="0" max="90" step="1" placeholder="30" aria-label="Soglia oscillazione percentuale" />
       </div>
 
-
-
-<div class="field">
-    <label for="fetchFromFile">Fetch da file?</label>
-    <input id="fetchFromFile" type="checkbox" />
-  </div>
+      <div class="field">
+        <label for="fetchFromFile">Fetch da file?</label>
+        <input id="fetchFromFile" type="checkbox" aria-label="Abilita caricamento simboli da file" />
+      </div>
 
       <div class="field">
         <label>&nbsp;</label>
-        <button id="fetchBtn">Fetch (da file)</button>
+        <button id="fetchBtn" aria-label="Esegui fetch">Fetch</button>
         <!-- input file nascosto -->
-        <input type="file" id="symbolsFile" accept=".txt,.csv,text/plain" style="display:none" />
+        <input type="file" id="symbolsFile" accept=".txt,.csv,text/plain" style="display:none" aria-label="Seleziona file simboli" />
       </div>
     </div>
 
-    <div class="status">
+    <div class="status" role="status" aria-live="polite">
       <span id="statusBadge" class="badge"><span id="statusDot" class="dot"></span><span id="statusText">Pronto</span></span>
       <span id="lastUpdate" class="small"></span>
       <span id="errorBox" class="small error"></span>
     </div>
 
-    <div class="hint">Puoi cliccare <b>Fetch (da file)</b> per scegliere un file <code>.txt</code>/<code>.csv</code> contenente simboli (separati da virgole, spazi o a capo). I simboli verranno inseriti nel campo "Simboli (virgola)" e poi verrà eseguita la richiesta.</div>
+    <div class="hint">
+      Puoi cliccare <b>Fetch</b> per interrogare le API oppure abilitare
+      <b>Fetch da file</b> per caricare un file <code>.txt</code>/<code>.csv</code>
+      (simboli separati da virgole, spazi o a capo). I simboli verranno inseriti nel campo
+      "Simboli (virgola)" e poi verrà eseguita la richiesta.
+    </div>
 
     <table id="tbl">
       <thead>
@@ -157,7 +164,7 @@
   </section>
 
   <!-- CHART PANEL -->
-  <section class="panel" id="chartPanel">
+  <section class="panel" id="chartPanel" aria-label="Grafico prezzi">
     <div class="controls">
       <div class="field">
         <label for="chartSymbol">Grafico simbolo</label>
@@ -167,15 +174,21 @@
       </div>
       <div class="field">
         <label>&nbsp;</label>
-        <div class="small">Mostra prezzi di chiusura (aggiustati) nell’intervallo selezionato. Linee tratteggiate: min/max del range e prezzo attuale.</div>
+        <div class="small">
+          Mostra prezzi di chiusura (aggiustati) nell’intervallo selezionato. Linee tratteggiate: min/max del range e prezzo attuale.<br/>
+          <i>Nota:</i> su browser compatibili (Chrome/Edge) il pulsante <b>Scarica dati (CSV)</b> consente di scegliere cartella e nome file; sugli altri browser il file verrà scaricato nella cartella predefinita.
+        </div>
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button id="downloadBtn" aria-label="Scarica i dati del grafico in CSV">Scarica dati (CSV)</button>
       </div>
     </div>
     <canvas id="chartCanvas"></canvas>
   </section>
   
-<!-- Chart.js locale -->
-<script src="libs/chart.umd.min.js"></script>
-
-  <script src="jscript.js?v=8"></script>
+  <!-- Chart.js locale -->
+  <script src="libs/chart.umd.min.js"></script>
+  <script src="jscript.js?v=2026.03.15"></script>
 </body>
 </html>

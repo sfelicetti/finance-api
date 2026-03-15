@@ -2,53 +2,292 @@
 // trigger render deploy
 import express from "express";
 import cors from "cors";
+import compression from "compression";
 import YahooFinance from "yahoo-finance2";
 
 const app = express();
+
+// CORS: in produzione valuta di restringere l'origine; per sviluppo va bene aperto
 app.use(cors({ origin: true }));
+app.use(compression());
 
 const yahooFinance = new YahooFinance();
+
+// Helpers
+const isYYYYMMDD = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || "").trim());
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function withRetry(fn, { retries = 1, delayMs = 400 } = {}) {
+  try {
+    return await fn();
+  } catch (e) {
+    if (retries > 0) {
+      await sleep(delayMs);
+      return withRetry(fn, { retries: retries - 1, delayMs: Math.round(delayMs * 1.5) });
+    }
+    throw e;
+  }
+}
+
+// Promise pool (concurrency limit)
+async function mapPool(items, worker, concurrency = 6) {
+  const results = new Array(items.length);
+  let i = 0;
+  let active = 0;
+  return new Promise((resolve) => {
+    const next = () => {
+      if (i >= items.length && active === 0) return resolve(results);
+      while (active < concurrency && i < items.length) {
+        const cur = i++;
+        active++;
+        Promise.resolve()
+          .then(() => worker(items[cur], cur))
+          .then((res) => { results[cur] = res; })
+          .catch((err) => { results[cur] = { __error: String(err?.message || err) }; })
+          .finally(() => { active--; next(); });
+      }
+    };
+    next();
+  });
+}
+
+/**
+ * Ricava un "nome descrittivo" per il simbolo:
+ * 1) quote.longName / shortName / displayName
+ * 2) quoteSummary(price).longName / shortName
+ * 3) search(symbol).quotes[0].longname / shortname
+ */
+async function resolvePrettyName(symbol, quoteObj) {
+  // 1) Dati da quote()
+  let name =
+    quoteObj?.longName ||
+    quoteObj?.shortName ||
+    quoteObj?.displayName ||
+    null;
+
+  if (name) return name;
+
+  // 2) Fallback: quoteSummary(price)
+  try {
+    const qs = await withRetry(
+      () => yahooFinance.quoteSummary(symbol, { modules: ["price"] }),
+      { retries: 1, delayMs: 400 }
+    );
+    const price = qs?.price;
+    name = price?.longName || price?.shortName || null;
+    if (name) return name;
+  } catch (_) {
+    // ignora, si passa al fallback successivo
+  }
+
+  // 3) Ultimo fallback: search()
+  try {
+    const sr = await withRetry(
+      () => yahooFinance.search(symbol),
+      { retries: 1, delayMs: 400 }
+    );
+    const q0 = Array.isArray(sr?.quotes) ? sr.quotes.find(q => (q?.symbol === symbol)) || sr.quotes[0] : null;
+    name = q0?.longname || q0?.shortname || null;
+    if (name) return name;
+  } catch (_) {
+    // ignora
+  }
+
+  // Fallback finale → simbolo
+  return symbol;
+}
+
+/**
+ * Ricava la "valuta" del titolo:
+ * 1) quote.currency
+ * 2) quote.financialCurrency
+ * 3) quoteSummary(price).currency
+ * 4) quoteSummary(summaryDetail).currency
+ * 5) Heuristics per suffisso simbolo / mercati (es. .MI/.PA/.DE → EUR; .L → GBP; .TO/.V → CAD; .T → JPY; .HK → HKD)
+ * 6) default: USD
+ */
+async function resolveCurrency(symbol, quoteObj) {
+  // 1) Da quote()
+  let cur = quoteObj?.currency || quoteObj?.financialCurrency || null;
+  if (cur) return cur;
+
+  // 2) Da quoteSummary(price)
+  try {
+    const qs = await withRetry(
+      () => yahooFinance.quoteSummary(symbol, { modules: ["price"] }),
+      { retries: 1, delayMs: 400 }
+    );
+    cur = qs?.price?.currency || null;
+    if (cur) return cur;
+  } catch (_) {
+    // noop
+  }
+
+  // 3) Da quoteSummary(summaryDetail)
+  try {
+    const qs2 = await withRetry(
+      () => yahooFinance.quoteSummary(symbol, { modules: ["summaryDetail"] }),
+      { retries: 1, delayMs: 500 }
+    );
+    cur = qs2?.summaryDetail?.currency || null;
+    if (cur) return cur;
+  } catch (_) {
+    // noop
+  }
+
+  // 4) Heuristiche per suffisso simbolo (mercato)
+  // NOTA: non esaustivo, ma copre i casi principali
+  const suffixMap = [
+    [/\.MI$/i, "EUR"], // Borsa Italiana
+    [/\.PA$/i, "EUR"], // Euronext Paris
+    [/\.DE$/i, "EUR"], // Xetra/Frankfurt
+    [/\.AS$/i, "EUR"], // Euronext Amsterdam
+    [/\.BR$/i, "EUR"], // Euronext Brussels
+    [/\.MC$/i, "EUR"], // BME Spain
+    [/\.L$/i,  "GBP"], // LSE (spesso GBp/GBX come subunità, qui standardizziamo a GBP)
+    [/\.TO$/i, "CAD"], // TSX
+    [/\.V$/i,  "CAD"], // TSX Venture
+    [/\.T$/i,  "JPY"], // Tokyo
+    [/\.HK$/i, "HKD"], // Hong Kong
+    [/\.AX$/i, "AUD"], // ASX
+    [/\.NZ$/i, "NZD"], // NZX
+    [/\.SS$/i, "CNY"], // Shanghai
+    [/\.SZ$/i, "CNY"], // Shenzhen
+  ];
+  for (const [re, c] of suffixMap) {
+    if (re.test(symbol)) return c;
+  }
+
+  // 5) Default
+  return "USD";
+}
 
 // PING
 app.get("/", (req, res) => {
   res.send("OK");
 });
 
-// === NUOVO ENDPOINT /api/history ===
-// Esempio: /api/history?symbols=AAPL,MSFT&from=2024-01-01&to=2024-02-01
+// === /api/history ===
+// /api/history?symbols=AAPL,MSFT&from=2024-01-01&to=2024-02-01&interval=1d
 app.get("/api/history", async (req, res) => {
   try {
-    const symbols = String(req.query.symbols || "")
-      .split(",")
+    // symbols parsing + dedup + normalizzazione
+    const rawSymbols = String(req.query.symbols || "")
+      .split(/[,\s;]+/)
       .map((s) => s.trim().toUpperCase())
       .filter(Boolean);
+    const symbols = Array.from(new Set(rawSymbols));
 
-    const period1 = req.query.from;
-    const period2 = req.query.to || new Date().toISOString().slice(0, 10);
-    const interval = "1d";
+    const period1 = String(req.query.from || "").trim();
+    const period2 = String(req.query.to || "").trim() || new Date().toISOString().slice(0, 10);
+    const interval = String(req.query.interval || "1d").trim();
 
+    const maxSymbols = 60;
     if (!symbols.length) {
       return res.status(400).json({ error: "symbols query param required" });
     }
-    if (!period1) {
+    if (symbols.length > maxSymbols) {
+      return res.status(400).json({ error: `too many symbols (max ${maxSymbols})` });
+    }
+    if (!period1 || !isYYYYMMDD(period1)) {
       return res.status(400).json({ error: "from param required (YYYY-MM-DD)" });
     }
+    if (!isYYYYMMDD(period2)) {
+      return res.status(400).json({ error: "to param invalid (YYYY-MM-DD)" });
+    }
+    if (new Date(period1) > new Date(period2)) {
+      return res.status(400).json({ error: "from must be <= to" });
+    }
 
-    const out = await Promise.all(
-      symbols.map(async (symbol) => {
-        // 1) Serie storica
-        const series = await yahooFinance.historical(symbol, {
-          period1,
-          period2,
-          interval,
-          events: "history",
-          includeAdjustedClose: true,
-        });
+    const out = await mapPool(
+      symbols,
+      async (symbol) => {
+        try {
+          // 1) Serie storica con retry "soft"
+          const series = await withRetry(
+            () =>
+              yahooFinance.historical(symbol, {
+                period1,
+                period2,
+                interval,
+                events: "history",
+                includeAdjustedClose: true,
+              }),
+            { retries: 1, delayMs: 500 }
+          );
 
-        // Nessun dato → ritorna oggetto vuoto
-        if (!series || !series.length) {
+          if (!Array.isArray(series) || series.length === 0) {
+            return {
+              symbol,
+              name: null,
+              shortName: null,
+              currency: null,
+              current: null,
+              min: null,
+              max: null,
+              potentialPct: null,
+              series: [],
+              error: "no historical data",
+            };
+          }
+
+          // 2) Quote attuale (retry soft, fallback ultimo close)
+          let q = null;
+          try {
+            q = await withRetry(() => yahooFinance.quote(symbol), { retries: 1, delayMs: 400 });
+          } catch (_) {
+            // fallback su ultimo close
+          }
+
+          const lastClose = series[series.length - 1]?.close;
+          const current = Number.isFinite(q?.regularMarketPrice)
+            ? q.regularMarketPrice
+            : (Number.isFinite(lastClose) ? lastClose : null);
+
+          // 3) Min/max nel range
+          const lows  = series.map(r => r.low).filter((v) => Number.isFinite(v));
+          const highs = series.map(r => r.high).filter((v) => Number.isFinite(v));
+
+          const min = lows.length  ? Math.min(...lows)  : null;
+          const max = highs.length ? Math.max(...highs) : null;
+
+          // 4) Upside %
+          const potentialPct =
+            Number.isFinite(current) && Number.isFinite(max) ? ((max / current - 1) * 100) : null;
+
+          // 5) Riduzione serie per il client
+          const cleanSeries = series.map(r => ({
+            date: r.date,
+            open: r.open,
+            high: r.high,
+            low: r.low,
+            close: r.close,
+            adjClose: r.adjClose,
+            volume: r.volume,
+          }));
+
+          // 6) Nome descrittivo robusto (quote → quoteSummary.price → search)
+          const name = await resolvePrettyName(symbol, q);
+
+          // 7) Valuta robusta (quote → quoteSummary → heuristiche)
+          const currency = await resolveCurrency(symbol, q);
+
           return {
             symbol,
+            name,
+            shortName: q?.shortName || null,
+            currency,
+            current,
+            min,
+            max,
+            potentialPct,
+            series: cleanSeries,
+          };
+        } catch (err) {
+          // Errore isolato per questo simbolo → non blocchiamo gli altri
+          return {
+            symbol,
+            name: null,
             shortName: null,
             currency: null,
             current: null,
@@ -56,56 +295,20 @@ app.get("/api/history", async (req, res) => {
             max: null,
             potentialPct: null,
             series: [],
+            error: String(err?.message || err),
           };
         }
-
-        // 2) Quote attuale (fallback → ultimo close)
-        let q = null;
-        try { q = await yahooFinance.quote(symbol); } catch (_) {}
-
-        const current =
-          q?.regularMarketPrice ??
-          series[series.length - 1].close;
-
-        // 3) Calcolo min/max
-        const lows  = series.map(r => r.low).filter(v => Number.isFinite(v));
-        const highs = series.map(r => r.high).filter(v => Number.isFinite(v));
-
-        const min = lows.length  ? Math.min(...lows)  : null;
-        const max = highs.length ? Math.max(...highs) : null;
-
-        // 4) Upside %
-        const potentialPct =
-          current && max ? ((max / current - 1) * 100) : null;
-
-        // 5) Serie ridotta per il client
-        const cleanSeries = series.map(r => ({
-          date: r.date,
-          open: r.open,
-          high: r.high,
-          low: r.low,
-          close: r.close,
-          adjClose: r.adjClose,
-          volume: r.volume,
-        }));
-
-        return {
-          symbol,
-          shortName: q?.shortName || symbol,
-          currency: q?.currency || null,
-          current,
-          min,
-          max,
-          potentialPct,
-          series: cleanSeries,
-        };
-      })
+      },
+      6 // concurrency
     );
 
     res.json(out);
   } catch (err) {
     console.error(err);
-    res.status(502).json({ error: "History fetch error", details: String(err.message || err) });
+    res.status(502).json({
+      error: "History fetch error",
+      details: String(err?.message || err),
+    });
   }
 });
 
@@ -113,3 +316,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log("API server running on port", PORT);
 });
+
