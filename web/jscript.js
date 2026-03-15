@@ -173,6 +173,9 @@ async function fetchHistory(){
 
   const params = new URLSearchParams({ symbols: symbols.join(','), from });
   if (to) params.append('to', to);
+  // Se in futuro aggiungi un <select id="interval">, potrai fare:
+  // const interval = (document.getElementById('interval')?.value || '1d');
+  // if (interval !== '1d') params.append('interval', interval);
 
   const url = `${base}/api/history?${params.toString()}`;
   try {
@@ -232,10 +235,11 @@ function renderTable(rows){
 
   for (const r of sorted){
     const clsPct = (r.potentialPct ?? 0) >= 0 ? 'pos' : 'neg';
+    const displayName = r.name || r.shortName || r.symbol || '—';
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td class="sym">${r.symbol || '—'}</td>
-      <td class="name" title="${r.shortName || ''}">${r.shortName || '—'}</td>
+      <td class="name" title="${String(displayName).replace(/"/g, '&quot;')}">${displayName}</td>
       <td class="mono">${fmtNum(r.current)}</td>
       <td class="mono">${fmtNum(r.min)}</td>
       <td class="mono">${fmtNum(r.max)}</td>
@@ -305,7 +309,7 @@ function populateChartControls(data){
   for (const r of available){
     const opt = document.createElement('option');
     opt.value = r.symbol;
-    opt.textContent = `${r.symbol} — ${r.shortName || ''}`;
+    opt.textContent = `${r.symbol} — ${r.name || r.shortName || ''}`;
     CHART_SYMBOL.appendChild(opt);
   }
   CHART_SYMBOL.disabled = false;
@@ -507,7 +511,7 @@ function updateChartFor(symbol) {
       },
       title: {
         display: true,
-        text: rec.shortName || rec.symbol,
+        text: rec.name || rec.shortName || rec.symbol,
         color: '#e5e7eb',
         padding: { top: 4, bottom: 4 },
         font: { size: 14, weight: '600' }
@@ -542,5 +546,4 @@ function drawEmptyChart(){
     priceChart.update();
   }
 }
-
 
