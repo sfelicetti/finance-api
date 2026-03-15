@@ -51,6 +51,52 @@ async function mapPool(items, worker, concurrency = 6) {
   });
 }
 
+/**
+ * Ricava un "nome descrittivo" per il simbolo:
+ * 1) quote.longName / shortName / displayName
+ * 2) quoteSummary(price).longName / shortName
+ * 3) search(symbol).quotes[0].longname / shortname
+ */
+async function resolvePrettyName(symbol, quoteObj) {
+  // 1) Dati da quote()
+  let name =
+    quoteObj?.longName ||
+    quoteObj?.shortName ||
+    quoteObj?.displayName ||
+    null;
+
+  if (name) return name;
+
+  // 2) Fallback: quoteSummary(price)
+  try {
+    const qs = await withRetry(
+      () => yahooFinance.quoteSummary(symbol, { modules: ["price"] }),
+      { retries: 1, delayMs: 400 }
+    );
+    const price = qs?.price;
+    name = price?.longName || price?.shortName || null;
+    if (name) return name;
+  } catch (_) {
+    // ignora, si passa al fallback successivo
+  }
+
+  // 3) Ultimo fallback: search()
+  try {
+    const sr = await withRetry(
+      () => yahooFinance.search(symbol),
+      { retries: 1, delayMs: 400 }
+    );
+    const q0 = Array.isArray(sr?.quotes) ? sr.quotes.find(q => (q?.symbol || q?.symbol === symbol)) || sr.quotes[0] : null;
+    name = q0?.longname || q0?.shortname || null;
+    if (name) return name;
+  } catch (_) {
+    // ignora
+  }
+
+  // Fallback finale → simbolo
+  return symbol;
+}
+
 // PING
 app.get("/", (req, res) => {
   res.send("OK");
@@ -155,12 +201,8 @@ app.get("/api/history", async (req, res) => {
             volume: r.volume,
           }));
 
-          // 6) Nome descrittivo robusto
-          const name =
-            q?.longName ||
-            q?.shortName ||
-            q?.displayName ||
-            symbol;
+          // 6) Nome descrittivo robusto (quote → quoteSummary.price → search)
+          const name = await resolvePrettyName(symbol, q);
 
           return {
             symbol,
@@ -206,4 +248,5 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log("API server running on port", PORT);
 });
+
 
